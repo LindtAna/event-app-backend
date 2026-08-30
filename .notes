@@ -32,3 +32,17 @@ migrate -version (в терминале появится dev)
 
 Затем 
 migrate create -ext sql -dir ./cmd/migrate/migrations -seq create_users_table
+
+migrate create -ext sql -dir ./cmd/migrate/migrations -seq create_events_table
+migrate create -ext sql -dir ./cmd/migrate/migrations -seq create_attendees_table
+
+заполнить таблицы
+
+Переходим на sqlite на Pure Go вместо sqlite3 с компилятором C (CGO)
+в migrate/migrations/main.go перевести всё с sqlite3 на sqlite и затем go mod tidy
+
+Как вариант: set CGO_ENABLED=1&& go run ./cmd/migrate/main.go up
+Но нужно чтобы был установлен GCC компилятор (например MinGW/GCC)
+
+
+go run ./cmd/migrate/main.go up
