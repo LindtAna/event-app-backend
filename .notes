@@ -1,0 +1,34 @@
+1. https://github.com/air-verse/air
+go install github.com/air-verse/air@latest
+
+Проверить, видит ли Windows мой Air(что всё установлено нормально):
+air -v
+
+Узнать путь к GOPATH:
+go env GOPATH
+
+2.Создать .air.toml — инструкция для Air:
+-За какими файлами следить (чтобы делать hot reload)
+-Какую команду запускать для компиляции проекта
+-Куда складывать временный скомпилированный бинарник
+-Какие папки игнорировать, чтобы не уходить в бесконечный цикл перезапуска\
+
+
+3. cmd/api/main.go — точка входа (запуск сервера).
+cmd/migrate/main.go — утилита для подготовки базы данных.
+cmd/migrate/migrations/ — SQL-скрипты для БД
+internal/ — внутренности приложения - настройки, базы данных, логика и тп.
+
+4. cmd/migrate/main.go  - go get package github.com/golang-migrate/migrate/database/sqlite3
+go get github.com/golang-migrate/migrate/v4
+go get github.com/golang-migrate/migrate/v4/database/sqlite3
+go get github.com/golang-migrate/migrate/v4/source/file
+go mod tidy
+
+Затем в терминале 
+go install -tags 'sqlite3' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+migrate -version (в терминале появится dev)
+
+Затем 
+migrate create -ext sql -dir ./cmd/migrate/migrations -seq create_users_table
