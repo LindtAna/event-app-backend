@@ -46,3 +46,9 @@ migrate create -ext sql -dir ./cmd/migrate/migrations -seq create_attendees_tabl
 
 
 go run ./cmd/migrate/main.go up
+
+При создании routes.go нужно установить package
+go get github.com/gin-gonic/gin
+
+На этапе создания env установить пакет
+go get github.com/joho/godotenv/autoload

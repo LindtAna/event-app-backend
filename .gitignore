@@ -1,3 +1,4 @@
 /tmp/
 *.db
 build-errors.log
+.env
