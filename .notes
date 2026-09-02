@@ -52,3 +52,38 @@ go get github.com/gin-gonic/gin
 
 На этапе создания env установить пакет
 go get github.com/joho/godotenv/autoload
+
+
+Тестирование регистрации user в cmd:
+curl -X POST http://localhost:8080/api/v1/auth/register -H "Content-Type: application/json" -d "{\"email\":\"test1@example.com\",\"password\":\"password\",\"name\":\"Test User 1\"}" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: HTTP Status: 201
+---
+Тестирование создания event в cmd:
+curl -X POST http://localhost:8080/api/v1/events -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6zkpXVCJ9.eyJleHByIjoxNzQwMDM2NzM3LCJ1c2VySWQiOjF9.mYtPAM88tgC9mDKpAlIAMrTweFblLHjvNVB6lVSSaMM" -d "{\"name\":\"Go Lesson\",\"ownerId\":1,\"description\":\"A lesson about Go programming\",\"date\":\"2025-05-20\",\"location\":\"Cologne\"}" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: HTTP Status: 201
+---
+Тестирование вызова всех event в cmd:
+curl -X GET http://localhost:8080/api/v1/events -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6zkpXVCJ9.eyJleHByIjoxNzQwMDM2NzM3LCJ1c2VySWQiOjF9.mYtPAM88tgC9mDKpAlIAMrTweFblLHjvNVB6lVSSaMM" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: HTTP Status: 200
+---
+Тестирование update event в cmd:
+curl -X PUT http://localhost:8080/api/v1/events/1 -H "Content-Type: application/json" -d "{\"name\":\"Go lesson\",\"ownerId\":1,\"description\":\"A lesson about Go programming\",\"date\":\"2025-05-20\",\"location\":\"Ehrenfeld\"}" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: HTTP Status: 200
+---
+Тестирование запрос конкретного event в cmd:
+curl -X GET http://localhost:8080/api/v1/events/1 -H "Content-Type: application/json" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: HTTP Status: 200
+---
+Тестирование удаление event в cmd:
+curl -X DELETE http://localhost:8080/api/v1/events/1 -H "Content-Type: application/json" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: HTTP Status: 204
+
+--
+Для просмотра сохранённых данных в data.db:
+установить расширение для VS code SQLite Viewer от Florian Klampfer
