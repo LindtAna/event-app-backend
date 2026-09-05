@@ -119,3 +119,5 @@ HTTP Status: 200
 Для просмотра сохранённых данных в data.db:
 установить расширение для VS code SQLite Viewer от Florian Klampfer
 
+Для авторизации установить пакет jwt:
+go get github.com/golang-jwt/jwt/v5
