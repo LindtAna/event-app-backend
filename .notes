@@ -84,6 +84,38 @@ curl -X DELETE http://localhost:8080/api/v1/events/1 -H "Content-Type: applicati
 
 Корректный ответ: HTTP Status: 204
 
---
+---
+Тестирование добавления участников к event в cmd:
+
+curl -X POST http://localhost:8080/api/v1/events/3/attendees/ -H "Content-Type: application/json" -w "\nHTTP Status: %{http_code}\n"
+
+..events/3/attendees/2
+ID события (:id): 3
+ID пользователя (:userId): 2
+
+Корректный ответ: HTTP Status: 201
+---
+Тестирование добавления участников к event в cmd:
+
+curl -X POST http://localhost:8080/api/v1/events/3/attendees/ -H "Content-Type: application/json" -w "\nHTTP Status: %{http_code}\n"
+
+..events/3/attendees/2
+ID события (:id): 3
+ID пользователя (:userId): 2
+
+Корректный ответ: 
+{"id":1,"userId":2,"eventId":3}
+HTTP Status: 201
+---
+Тестирование запроса списка участников event в cmd:
+
+curl -X GET http://localhost:8080/api/v1/events/3/attendees -H "Content-Type: application/json" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: 
+[{"id":2,"name":"Test User 2","email":"test2@example.com"},{"id":3,"name":"Test User 3","email":"test3@example.com"}]
+HTTP Status: 200
+---
+
 Для просмотра сохранённых данных в data.db:
 установить расширение для VS code SQLite Viewer от Florian Klampfer
+
