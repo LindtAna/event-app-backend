@@ -115,6 +115,21 @@ curl -X GET http://localhost:8080/api/v1/events/3/attendees -H "Content-Type: ap
 [{"id":2,"name":"Test User 2","email":"test2@example.com"},{"id":3,"name":"Test User 3","email":"test3@example.com"}]
 HTTP Status: 200
 ---
+Тестирование login cmd:
+
+curl -X GET http://localhost:8080/api/v1/events/3/attendees -H "Content-Type: application/json" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: 
+{"token":"eyJhbG....."}
+HTTP Status: 200
+---
+Тестирование создания event после авторизации в cmd:
+
+curl -X POST http://localhost:8080/api/v1/events -H "Content-Type: application/json"
+-H "Authorization: Bearer ВСТАВИТЬ token из login response" -d "{\"name\":\"Go Lesson Login\",\"ownerId\":1,\"description\":\"A lesson about Go programming\",\"date\":\"2026-09-06\",\"location\":\"Cologne\"}" -w "\nHTTP Status: %{http_code}\n"
+
+Корректный ответ: HTTP Status: 201
+---
 
 Для просмотра сохранённых данных в data.db:
 установить расширение для VS code SQLite Viewer от Florian Klampfer
