@@ -1,5 +1,12 @@
 # EventApp Backend API
 
+![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)
+![Gin](https://img.shields.io/badge/Gin-v1.10.0-008080?style=flat&logo=gin&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-modernc.org%2Fsqlite-003B57?style=flat&logo=sqlite&logoColor=white)
+![golang-jwt](https://img.shields.io/badge/golang--jwt-v5.2.1-F28D35?style=flat)
+![Swagger](https://img.shields.io/badge/Swagger-OpenAPI_3.0-85EA2D?style=flat&logo=swagger&logoColor=black)
+![godotenv](https://img.shields.io/badge/godotenv-v1.5.1-222222?style=flat)
+
 ## Über das Projekt
 Das EventApp Backend ist eine RESTful API, die in Go(Golang) entwickelt wurde.
 Sie dient als Grundlage für eine Event-Management-Plattform, auf der Benutzer sich registrieren, Events erstellen, verwalten und sich als Teilnehmer für Events eintragen können.
@@ -57,7 +64,7 @@ Der Fokus dieses Backends liegt auf sauberer Architektur, hoher Performance durc
 ---
 
 ##  Umgebungsvariablen
-### `/EventApp/.env`
+#### `/EventApp/.env`
 
 ```env
 PORT=8080
