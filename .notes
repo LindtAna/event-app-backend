@@ -136,3 +136,22 @@ curl -X POST http://localhost:8080/api/v1/events -H "Content-Type: application/j
 
 Для авторизации установить пакет jwt:
 go get github.com/golang-jwt/jwt/v5
+
+
+//Swagger
+подтянуть зависимости 
+go mod tidy
+
+Скачать утилиту swag
+go install github.com/swaggo/swag/cmd/swag@latest
+
+Чтобы появилась папка docs
+swag init -g cmd/api/main.go
+
+обновить до swag до актуальной версии:
+go get -u github.com/swaggo/swag
+go mod tidy
+
+После написания Swagger-аннотаций в коде
+ввести в терминале команду для перегенерации схемы документации в папке docs:
+swag init --dir cmd/api --parseDependency --parseInternal --parseDepth 1

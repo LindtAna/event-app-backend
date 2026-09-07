@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	_ "event-app/docs"
 	"event-app/internal/database"
 	"event-app/internal/env"
 	"log"
@@ -10,6 +11,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// @title Go gin REST API
+// @version 1.0
+// @description a REST API in Go using Gin framework
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Enter your bearer tken in the forman **Bearer &lt;token&gt;**
 type application struct {
 	port      int
 	jwtSecret string
