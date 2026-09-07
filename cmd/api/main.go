@@ -19,9 +19,10 @@ import (
 // @name Authorization
 // @description Enter your bearer tken in the forman **Bearer &lt;token&gt;**
 type application struct {
-	port      int
-	jwtSecret string
-	models    database.Models
+	port         int
+	jwtSecret    string
+	clientOrigin string
+	models       database.Models
 }
 
 func main() {
@@ -35,9 +36,10 @@ func main() {
 
 	models := database.NewModels(db)
 	app := &application{
-		port:      env.GetEnvInt("PORT", 8080),
-		jwtSecret: env.GetEnvString("JWT_SECRET", "somes-secret-1234"),
-		models:    models,
+		port:         env.GetEnvInt("PORT", 8080),
+		jwtSecret:    env.GetEnvString("JWT_SECRET", "somes-secret-1234"),
+		clientOrigin: env.GetEnvString("CLIENT_ORIGIN", "http://localhost:5173"),
+		models:       models,
 	}
 
 	if err := app.serve(); err != nil {

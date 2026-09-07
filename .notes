@@ -155,3 +155,8 @@ go mod tidy
 После написания Swagger-аннотаций в коде
 ввести в терминале команду для перегенерации схемы документации в папке docs:
 swag init --dir cmd/api --parseDependency --parseInternal --parseDepth 1
+
+///
+создать стуруктуру репозитория:
+в Git Bash
+cmd //c "tree /F /A" > structure.txt
