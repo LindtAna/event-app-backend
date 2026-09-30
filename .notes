@@ -160,3 +160,25 @@ swag init --dir cmd/api --parseDependency --parseInternal --parseDepth 1
 создать стуруктуру репозитория:
 в Git Bash
 cmd //c "tree /F /A" > structure.txt
+
+
+Работа с фронтом и бэком в workspace:
+-Открыть папку с бэком
+Верхнее меню: File -> Add Folder to Workspace... -> добавить папку с фронтендом.
+Сохранить workspace: File -> Save Workspace As... 
+
+//старт бэкэнда
+go run ./cmd/api
+
+
+//старт фронтенда
+
+cd ..\EventAppClient\client
+
+
+ЛИБО!:
+В корне, например, бэкэнда создать : .vscode/tasks.json
+В нём правильно прописать "cwd" к фронту и бэку
+Затем Ctrl + Shift + P -> Tasks: Run Task -> Start Dev Environment
+
+Будут стартовать оба сервиса одновременно.
