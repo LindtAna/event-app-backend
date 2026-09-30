@@ -21,8 +21,34 @@ type loginRequest struct {
 	Password string `json:"password" binding:"required,min=8"`
 }
 
-type loginResponse struct {
-	Token string `json:"token"`
+type authResponse struct {
+	AccessToken string        `json:"accessToken"`
+	User        database.User `json:"user"`
+}
+
+// Generierung des Access-Tokens (15 Minuten)
+func (app *application) generateAccessToken(userID int) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"userId": userID,
+		"exp":    time.Now().Add(15 * time.Minute).Unix(),
+	})
+	return token.SignedString([]byte(app.jwtSecret))
+}
+
+// Generierung des Refresh-Tokens (7 Tage)
+func (app *application) generateRefreshToken(userID int) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"userId": userID,
+		"exp":    time.Now().Add(7 * 24 * time.Hour).Unix(),
+	})
+	return token.SignedString([]byte(app.jwtSecret))
+}
+
+// Speichern des Refresh-Tokens in einem HttpOnly-Cookie
+func (app *application) setRefreshTokenCookie(c *gin.Context, refreshToken string) {
+	// MaxAge: 7 Tage = 7 * 24 * 3600 Sec
+	// httpOnly: true (Schutz vor XSS), secure: false (für localhost; in der Produktion -> true)
+	c.SetCookie("refreshToken", refreshToken, 7*24*3600, "/api/v1/auth", "localhost", false, true)
 }
 
 // RegisterUser registers a new user
@@ -48,10 +74,10 @@ func (app *application) registerUser(c *gin.Context) {
 		return
 	}
 
-	register.Password = string(hashedPassword)
+	// register.Password = string(hashedPassword)
 	user := database.User{
 		Email:    register.Email,
-		Password: register.Password,
+		Password: string(hashedPassword),
 		Name:     register.Name,
 	}
 
@@ -99,17 +125,73 @@ func (app *application) login(c *gin.Context) {
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"userId": existingUser.Id,
-		"exp":    time.Now().Add(time.Hour * 72).Unix(),
-	})
-
-	tokenString, err := token.SignedString([]byte(app.jwtSecret))
+	accessToken, err := app.generateAccessToken(existingUser.Id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generationg token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating token"})
 		return
 	}
 
-	c.JSON(http.StatusOK, loginResponse{Token: tokenString})
+	refreshToken, err := app.generateRefreshToken(existingUser.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating token"})
+		return
+	}
 
+	app.setRefreshTokenCookie(c, refreshToken)
+
+	c.JSON(http.StatusOK, authResponse{
+		AccessToken: accessToken,
+		User:        *existingUser,
+	})
+}
+
+// Endpoint zur Aktualisierung des Access-Tokens mittels HttpOnly-Cookie
+func (app *application) refreshToken(c *gin.Context) {
+	cookie, err := c.Cookie("refreshToken")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Refresh token missing"})
+		return
+	}
+
+	token, err := jwt.Parse(cookie, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return []byte(app.jwtSecret), nil
+	})
+
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token"})
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
+		return
+	}
+
+	userID := int(claims["userId"].(float64))
+	user, err := app.models.Users.Get(userID)
+	if err != nil || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+
+	newAccessToken, err := app.generateAccessToken(user.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, authResponse{
+		AccessToken: newAccessToken,
+		User:        *user,
+	})
+}
+
+// Logout-Endpoint (löscht das Cookie)
+func (app *application) logout(c *gin.Context) {
+	c.SetCookie("refreshToken", "", -1, "/api/v1/auth", "localhost", false, true)
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully logged out"})
 }
