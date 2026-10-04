@@ -60,15 +60,13 @@ func (m *UserModel) getUser(query string, args ...interface{}) (*User, error) {
 }
 
 func (m *UserModel) Get(id int) (*User, error) {
-	query := "SELECT id, name, email, password FROM users WHERE id = ?"
+	query := "SELECT id, name, email, password, bio, avatar_url FROM users WHERE id = ?"
 	return m.getUser(query, id)
-
 }
 
 func (m *UserModel) GetByEmail(email string) (*User, error) {
-	query := "SELECT id, name, email, password FROM users WHERE email = ?"
+	query := "SELECT id, name, email, password, bio, avatar_url FROM users WHERE email = ?"
 	return m.getUser(query, email)
-
 }
 
 // Aktualisierung des Profils

@@ -2,6 +2,7 @@ package main
 
 import (
 	"event-app/internal/database"
+	"log"
 	"net/http"
 	"time"
 
@@ -151,6 +152,7 @@ func (app *application) login(c *gin.Context) {
 
 	existingUser, err := app.models.Users.GetByEmail(auth.Email)
 	if err != nil {
+		log.Println("ERROR GetByEmail:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Something went wrong"})
 		return
 	}
