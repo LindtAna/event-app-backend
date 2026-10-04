@@ -182,3 +182,12 @@ cd ..\EventAppClient\client
 Затем Ctrl + Shift + P -> Tasks: Run Task -> Start Dev Environment
 
 Будут стартовать оба сервиса одновременно.
+
+
+---
+
+после обновления файла миграции (000001_create_users_table.up.sql)
+можем удалить data.db со старыми данными:
+-останавливаем сервер, удаляем data.db
+-запускаем сервер, он создает новый пустой data.db
+-в консоли бэкэнда пишем go run ./cmd/migrate up (новые таблицы подгружаются)

@@ -26,6 +26,12 @@ type authResponse struct {
 	User        database.User `json:"user"`
 }
 
+type updateProfileRequest struct {
+	Name      string `json:"name" binding:"required,min=2"`
+	Bio       string `json:"bio"`
+	AvatarUrl string `json:"avatarUrl"`
+}
+
 // Generierung des Access-Tokens (15 Minuten)
 func (app *application) generateAccessToken(userID int) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -89,6 +95,40 @@ func (app *application) registerUser(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, user)
 
+}
+
+func (app *application) updateProfile(c *gin.Context) {
+	// Benutzer-ID aus der Middleware abrufen
+	userID, exists := c.Get("userId")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var req updateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Daten in der Datenbank aktualisieren
+	err := app.models.Users.UpdateProfile(userID.(int), req.Name, req.Bio, req.AvatarUrl)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
+		return
+	}
+
+	// Aktualisierte Benutzerdaten abrufen
+	updatedUser, err := app.models.Users.Get(userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Profile updated successfully",
+		"user":    updatedUser,
+	})
 }
 
 // Login logs in a user
