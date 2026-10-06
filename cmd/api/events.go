@@ -44,18 +44,34 @@ func (app *application) createEvent(c *gin.Context) {
 	c.JSON(http.StatusCreated, event)
 }
 
-// getEvents return all events
+// getAllEvents returns all events or filters them by ownerId
 //
-// @Summary Returns all events
-// @Description Returns all events
+// @Summary Returns all events or filters by owner ID
+// @Description Returns a list of all events, optionally filtered by ownerId query parameter
 // @Tags events
 // @Accept json
 // @Produce json
-// @Success 200 {object} []database.Event
+// @Param ownerId query int false "Filter events by owner ID"
+// @Success 200 {array} database.Event
+// @Failure 400 {object} map[string]string "Invalid ownerId parameter"
+// @Failure 500 {object} map[string]string "Failed to retrieve events"
 // @Router /api/v1/events [get]
 func (app *application) getAllEvents(c *gin.Context) {
+	ownerIDParam := c.Query("ownerId")
 
-	events, err := app.models.Events.GetAll()
+	var events []*database.Event
+	var err error
+
+	if ownerIDParam != "" {
+		ownerID, parseErr := strconv.Atoi(ownerIDParam)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ownerId parameter"})
+			return
+		}
+		events, err = app.models.Events.GetByOwnerID(ownerID)
+	} else {
+		events, err = app.models.Events.GetAll()
+	}
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve events"})

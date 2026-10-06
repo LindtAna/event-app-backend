@@ -138,6 +138,51 @@ func (m *EventModel) Get(id int) (*Event, error) {
 	return &event, nil
 }
 
+func (m *EventModel) GetByOwnerID(ownerID int) ([]*Event, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	query := `SELECT id, owner_id, title, description, image_url,
+	location, start_date_time, end_date_time,
+	category_id, url FROM events WHERE owner_id = ?`
+
+	rows, err := m.DB.QueryContext(ctx, query, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []*Event{}
+
+	for rows.Next() {
+		var event Event
+
+		err := rows.Scan(
+			&event.Id,
+			&event.OwnerId,
+			&event.Title,
+			&event.Description,
+			&event.ImageUrl,
+			&event.Location,
+			&event.StartDateTime,
+			&event.EndDateTime,
+			&event.CategoryId,
+			&event.Url,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		events = append(events, &event)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}
+
 func (m *EventModel) Update(event *Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
