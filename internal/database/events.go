@@ -11,21 +11,41 @@ type EventModel struct {
 }
 
 type Event struct {
-	Id          int    `json:"id"`
-	OwnerId     int    `json:"ownerId"`
-	Name        string `json:"name" binding:"required,min=1"`
-	Description string `json:"description" binding:"required,min=10,max=500"`
-	Date        string `json:"date" binding:"required,datetime=2006-01-02"`
-	Location    string `json:"location" binding:"required,min=3"`
+	Id            int    `json:"id"`
+	OwnerId       int    `json:"ownerId"`
+	Title         string `json:"title" binding:"required,min=3,max=100"`
+	Description   string `json:"description" binding:"required,min=3,max=400"`
+	ImageUrl      string `json:"imageUrl"`
+	Location      string `json:"location" binding:"required,min=3,max=200"`
+	StartDateTime string `json:"startDateTime" binding:"required"`
+	EndDateTime   string `json:"endDateTime" binding:"required"`
+	CategoryId    string `json:"categoryId" binding:"required"`
+	Url           string `json:"url"`
 }
 
 func (m *EventModel) Insert(event *Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := "INSERT INTO events(owner_id, name, description, date, location) VALUES(?, ?, ?, ?, ?)"
-
-	result, err := m.DB.ExecContext(ctx, query, event.OwnerId, event.Name, event.Description, event.Date, event.Location)
+	query := `
+		INSERT INTO events(owner_id, title, description,
+		image_url, location, start_date_time, end_date_time,
+		category_id, url)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	result, err := m.DB.ExecContext(
+		ctx,
+		query,
+		event.OwnerId,
+		event.Title,
+		event.Description,
+		event.ImageUrl,
+		event.Location,
+		event.StartDateTime,
+		event.EndDateTime,
+		event.CategoryId,
+		event.Url,
+	)
 	if err != nil {
 		return err
 	}
@@ -44,8 +64,9 @@ func (m *EventModel) GetAll() ([]*Event, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := "SELECT * FROM events"
-	// query := "SELECT id, owner_id, name, description, date, location FROM events" wahrcheinlich besser
+	query := `SELECT id, owner_id, title, description, image_url,
+	location, start_date_time, end_date_time,
+	category_id, url FROM events`
 
 	rows, err := m.DB.QueryContext(ctx, query)
 
@@ -60,7 +81,18 @@ func (m *EventModel) GetAll() ([]*Event, error) {
 	for rows.Next() {
 		var event Event
 
-		err := rows.Scan(&event.Id, &event.OwnerId, &event.Name, &event.Description, &event.Date, &event.Location)
+		err := rows.Scan(
+			&event.Id,
+			&event.OwnerId,
+			&event.Title,
+			&event.Description,
+			&event.ImageUrl,
+			&event.Location,
+			&event.StartDateTime,
+			&event.EndDateTime,
+			&event.CategoryId,
+			&event.Url,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -79,12 +111,24 @@ func (m *EventModel) Get(id int) (*Event, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := "SELECT * FROM events WHERE id = ?"
+	query := `SELECT id, owner_id, title, description, image_url, location,
+	start_date_time, end_date_time,
+	category_id, url FROM events WHERE id = ?`
 
 	var event Event
 
-	err := m.DB.QueryRowContext(ctx, query, id).Scan(&event.Id, &event.OwnerId, &event.Name, &event.Description, &event.Date, &event.Location)
-
+	err := m.DB.QueryRowContext(ctx, query, id).Scan(
+		&event.Id,
+		&event.OwnerId,
+		&event.Title,
+		&event.Description,
+		&event.ImageUrl,
+		&event.Location,
+		&event.StartDateTime,
+		&event.EndDateTime,
+		&event.CategoryId,
+		&event.Url,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -98,9 +142,26 @@ func (m *EventModel) Update(event *Event) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := "UPDATE events SET name = ?, description = ?, date = ?, location = ? WHERE id = ?"
-
-	result, err := m.DB.ExecContext(ctx, query, event.Name, event.Description, event.Date, event.Location, event.Id)
+	query := `
+		UPDATE events 
+		SET title = ?, description = ?, image_url = ?, location = ?,
+		start_date_time = ?, end_date_time = ?,
+		category_id = ?, url = ? 
+		WHERE id = ?
+	`
+	result, err := m.DB.ExecContext(
+		ctx,
+		query,
+		event.Title,
+		event.Description,
+		event.ImageUrl,
+		event.Location,
+		event.StartDateTime,
+		event.EndDateTime,
+		event.CategoryId,
+		event.Url,
+		event.Id,
+	)
 	if err != nil {
 		return err
 	}

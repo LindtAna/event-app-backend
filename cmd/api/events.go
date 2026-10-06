@@ -27,11 +27,15 @@ func (app *application) createEvent(c *gin.Context) {
 		return
 	}
 
-	user := app.GetUserFromContext(c)
-	event.OwnerId = user.Id
+	userID, exists := c.Get("userId")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	event.OwnerId = userID.(int)
 
 	err := app.models.Events.Insert(&event)
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create event"})
 		return
@@ -116,9 +120,13 @@ func (app *application) updateEvent(c *gin.Context) {
 		return
 	}
 
-	user := app.GetUserFromContext(c)
-	existingEvent, err := app.models.Events.Get(id)
+	userID, exists := c.Get("userId")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 
+	existingEvent, err := app.models.Events.Get(id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve event"})
 		return
@@ -129,20 +137,19 @@ func (app *application) updateEvent(c *gin.Context) {
 		return
 	}
 
-	if existingEvent.OwnerId != user.Id {
+	if existingEvent.OwnerId != userID.(int) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You are not authorised to update this event"})
 		return
 	}
 
 	updatedEvent := &database.Event{}
-
 	if err := c.ShouldBindJSON(updatedEvent); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	updatedEvent.Id = id
-	updatedEvent.OwnerId = user.Id
+	updatedEvent.OwnerId = userID.(int)
 
 	if err := app.models.Events.Update(updatedEvent); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update event"})
