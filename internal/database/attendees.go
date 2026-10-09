@@ -117,11 +117,22 @@ func (m *AttendeeModel) GetEventsByAttendee(attendeeId int) ([]*Event, error) {
 	defer cancel()
 
 	query := `
-	SELECT e.id, e.owner_id, e.name, e.description, e.date, e.location
-	FROM events e
-	JOIN attendees a ON e.id = a.event_id
-	WHERE a.user_id = ?
+		SELECT
+			e.id,
+			e.owner_id,
+			e.title,
+			e.description,
+			e.image_url,
+			e.location,
+			e.start_date_time,
+			e.end_date_time,
+			e.category_id,
+			e.url
+		FROM events e
+		JOIN attendees a ON e.id = a.event_id
+		WHERE a.user_id = ?
 	`
+
 	rows, err := m.DB.QueryContext(ctx, query, attendeeId)
 	if err != nil {
 		return nil, err
@@ -133,7 +144,18 @@ func (m *AttendeeModel) GetEventsByAttendee(attendeeId int) ([]*Event, error) {
 
 	for rows.Next() {
 		var event Event
-		err := rows.Scan(&event.Id, &event.OwnerId, &event.Title, &event.Description, &event.StartDateTime, &event.Location)
+		err := rows.Scan(
+			&event.Id,
+			&event.OwnerId,
+			&event.Title,
+			&event.Description,
+			&event.ImageUrl,
+			&event.Location,
+			&event.StartDateTime,
+			&event.EndDateTime,
+			&event.CategoryId,
+			&event.Url,
+		)
 		if err != nil {
 			return nil, err
 		}

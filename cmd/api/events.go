@@ -364,8 +364,10 @@ func (app *application) deleteAttendeeFromEvent(c *gin.Context) {
 
 	user := app.GetUserFromContext(c)
 
-	if event.OwnerId != user.Id {
-		c.JSON(http.StatusForbidden, gin.H{"error": "You are not authorised to delete an attendee to this event"})
+	if event.OwnerId != user.Id && userId != user.Id {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "You are not authorised to delete attendee to this event",
+		})
 		return
 	}
 
