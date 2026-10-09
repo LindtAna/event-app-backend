@@ -269,8 +269,10 @@ func (app *application) addAttendeeToEvent(c *gin.Context) {
 
 	user := app.GetUserFromContext(c)
 
-	if event.OwnerId != user.Id {
-		c.JSON(http.StatusForbidden, gin.H{"error": "You are not authorised to add an attendee to this event"})
+	if event.OwnerId != user.Id && userToAdd.Id != user.Id {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "You are not authorised to add an attendee to this event",
+		})
 		return
 	}
 

@@ -41,8 +41,8 @@ func (m *AttendeeModel) GetByEventAndAttendee(eventId, userId int) (*Attendee, e
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := "SELECT * FROM attendees WHERE event_id = ? AND user_id = ?"
-	// query := "SELECT id, event_id, user_id FROM attendees WHERE event_id = ? AND user_id = ?"
+	// query := "SELECT * FROM attendees WHERE event_id = ? AND user_id = ?"
+	query := "SELECT id, event_id, user_id FROM attendees WHERE event_id = ? AND user_id = ?"
 
 	var attendee Attendee
 
@@ -133,7 +133,7 @@ func (m *AttendeeModel) GetEventsByAttendee(attendeeId int) ([]*Event, error) {
 
 	for rows.Next() {
 		var event Event
-		err := rows.Scan(&event.Id, &event.OwnerId, &event.Title, &event.Description, event.StartDateTime, &event.Location)
+		err := rows.Scan(&event.Id, &event.OwnerId, &event.Title, &event.Description, &event.StartDateTime, &event.Location)
 		if err != nil {
 			return nil, err
 		}
