@@ -10,9 +10,15 @@ type EventModel struct {
 	DB *sql.DB
 }
 
+type Owner struct {
+	Id   int    `json:"id"`
+	Name string `json:"name"`
+}
+
 type Event struct {
 	Id            int    `json:"id"`
 	OwnerId       int    `json:"ownerId"`
+	Owner         *Owner `json:"owner,omitempty"`
 	Title         string `json:"title" binding:"required,min=3,max=100"`
 	Description   string `json:"description" binding:"required,min=3,max=400"`
 	ImageUrl      string `json:"imageUrl"`
@@ -64,10 +70,13 @@ func (m *EventModel) GetAll() ([]*Event, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := `SELECT id, owner_id, title, description, image_url,
-	location, start_date_time, end_date_time,
-	category_id, url FROM events`
-
+	query := `
+		SELECT e.id, e.owner_id, e.title, e.description, e.image_url,
+		       e.location, e.start_date_time, e.end_date_time,
+		       e.category_id, e.url, COALESCE(u.name, '') AS owner_name
+		FROM events e
+		LEFT JOIN users u ON e.owner_id = u.id
+	`
 	rows, err := m.DB.QueryContext(ctx, query)
 
 	if err != nil {
@@ -80,6 +89,7 @@ func (m *EventModel) GetAll() ([]*Event, error) {
 
 	for rows.Next() {
 		var event Event
+		var ownerName string
 
 		err := rows.Scan(
 			&event.Id,
@@ -92,9 +102,17 @@ func (m *EventModel) GetAll() ([]*Event, error) {
 			&event.EndDateTime,
 			&event.CategoryId,
 			&event.Url,
+			&ownerName,
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		if event.OwnerId > 0 {
+			event.Owner = &Owner{
+				Id:   event.OwnerId,
+				Name: ownerName,
+			}
 		}
 
 		events = append(events, &event)
@@ -111,11 +129,17 @@ func (m *EventModel) Get(id int) (*Event, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := `SELECT id, owner_id, title, description, image_url, location,
-	start_date_time, end_date_time,
-	category_id, url FROM events WHERE id = ?`
+	query := `
+		SELECT e.id, e.owner_id, e.title, e.description, e.image_url,
+		       e.location, e.start_date_time, e.end_date_time,
+		       e.category_id, e.url, COALESCE(u.name, '') AS owner_name
+		FROM events e
+		LEFT JOIN users u ON e.owner_id = u.id
+		WHERE e.id = ?
+	`
 
 	var event Event
+	var ownerName string
 
 	err := m.DB.QueryRowContext(ctx, query, id).Scan(
 		&event.Id,
@@ -128,6 +152,7 @@ func (m *EventModel) Get(id int) (*Event, error) {
 		&event.EndDateTime,
 		&event.CategoryId,
 		&event.Url,
+		&ownerName,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -135,6 +160,14 @@ func (m *EventModel) Get(id int) (*Event, error) {
 		}
 		return nil, err
 	}
+
+	if event.OwnerId > 0 {
+		event.Owner = &Owner{
+			Id:   event.OwnerId,
+			Name: ownerName,
+		}
+	}
+
 	return &event, nil
 }
 
@@ -142,9 +175,14 @@ func (m *EventModel) GetByOwnerID(ownerID int) ([]*Event, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := `SELECT id, owner_id, title, description, image_url,
-	location, start_date_time, end_date_time,
-	category_id, url FROM events WHERE owner_id = ?`
+	query := `
+		SELECT e.id, e.owner_id, e.title, e.description, e.image_url,
+		       e.location, e.start_date_time, e.end_date_time,
+		       e.category_id, e.url, COALESCE(u.name, '') AS owner_name
+		FROM events e
+		LEFT JOIN users u ON e.owner_id = u.id
+		WHERE e.owner_id = ?
+	`
 
 	rows, err := m.DB.QueryContext(ctx, query, ownerID)
 	if err != nil {
@@ -156,6 +194,7 @@ func (m *EventModel) GetByOwnerID(ownerID int) ([]*Event, error) {
 
 	for rows.Next() {
 		var event Event
+		var ownerName string
 
 		err := rows.Scan(
 			&event.Id,
@@ -168,9 +207,17 @@ func (m *EventModel) GetByOwnerID(ownerID int) ([]*Event, error) {
 			&event.EndDateTime,
 			&event.CategoryId,
 			&event.Url,
+			&ownerName,
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		if event.OwnerId > 0 {
+			event.Owner = &Owner{
+				Id:   event.OwnerId,
+				Name: ownerName,
+			}
 		}
 
 		events = append(events, &event)
