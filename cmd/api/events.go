@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"event-app/internal/database"
 	"net/http"
 	"strconv"
@@ -35,9 +37,21 @@ func (app *application) createEvent(c *gin.Context) {
 
 	event.OwnerId = userID.(int)
 
-	err := app.models.Events.Insert(&event)
+	err := app.models.Events.CreateWithCategory(
+		c.Request.Context(),
+		&event,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create event"})
+		if errors.Is(err, database.ErrInvalidCategory) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Please select an existing category or provide a category name",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create event",
+		})
 		return
 	}
 
@@ -167,8 +181,25 @@ func (app *application) updateEvent(c *gin.Context) {
 	updatedEvent.Id = id
 	updatedEvent.OwnerId = userID.(int)
 
-	if err := app.models.Events.Update(updatedEvent); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update event"})
+	if err := app.models.Events.UpdateWithCategory(
+		c.Request.Context(),
+		updatedEvent,
+	); err != nil {
+		if errors.Is(err, database.ErrInvalidCategory) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Please select an existing category or provide a category name",
+			})
+			return
+		}
+
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Event not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update event",
+		})
 		return
 	}
 
@@ -213,8 +244,18 @@ func (app *application) deleteEvent(c *gin.Context) {
 		return
 	}
 
-	if err := app.models.Events.Delete(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete event"})
+	if err := app.models.Events.DeleteWithCategory(
+		c.Request.Context(),
+		id,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Event not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete event",
+		})
 		return
 	}
 

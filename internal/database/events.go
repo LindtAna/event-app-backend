@@ -25,7 +25,8 @@ type Event struct {
 	Location      string `json:"location" binding:"required,min=3,max=200"`
 	StartDateTime string `json:"startDateTime" binding:"required"`
 	EndDateTime   string `json:"endDateTime" binding:"required"`
-	CategoryId    string `json:"categoryId" binding:"required"`
+	CategoryId    string `json:"categoryId"`
+	CategoryName  string `json:"categoryName,omitempty"`
 	Url           string `json:"url"`
 }
 
