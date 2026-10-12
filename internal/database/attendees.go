@@ -127,9 +127,12 @@ func (m *AttendeeModel) GetEventsByAttendee(attendeeId int) ([]*Event, error) {
 			e.start_date_time,
 			e.end_date_time,
 			e.category_id,
-			e.url
+			e.url,
+			u.id,
+			u.name
 		FROM events e
 		JOIN attendees a ON e.id = a.event_id
+		JOIN users u ON e.owner_id = u.id
 		WHERE a.user_id = ?
 	`
 
@@ -143,7 +146,10 @@ func (m *AttendeeModel) GetEventsByAttendee(attendeeId int) ([]*Event, error) {
 	var events []*Event
 
 	for rows.Next() {
+
 		var event Event
+		var owner Owner
+
 		err := rows.Scan(
 			&event.Id,
 			&event.OwnerId,
@@ -155,10 +161,13 @@ func (m *AttendeeModel) GetEventsByAttendee(attendeeId int) ([]*Event, error) {
 			&event.EndDateTime,
 			&event.CategoryId,
 			&event.Url,
+			&owner.Id,
+			&owner.Name,
 		)
 		if err != nil {
 			return nil, err
 		}
+		event.Owner = &owner
 		events = append(events, &event)
 	}
 
