@@ -12,9 +12,7 @@ import (
 
 var ErrInvalidCategory = errors.New("invalid or missing category")
 
-// CreateWithCategory creates an event and resolves its category
-// within the same transaction.
-
+// erstellt ein Event und löst dessen Kategorie innerhalb derselben Transaktion auf
 func (m *EventModel) CreateWithCategory(ctx context.Context, event *Event) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -72,8 +70,8 @@ func (m *EventModel) CreateWithCategory(ctx context.Context, event *Event) error
 
 }
 
-// UpdateWithCategory updates an event and resolves its category
-// within the same transaction. An unused custom category is removed.
+// Aktualisiert ein Event und löst dessen Kategorie innerhalb derselben Transaktion auf
+// Eine ungenutzte benutzerdefinierte Kategorie wird entfernt
 func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -149,8 +147,8 @@ func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error
 
 }
 
-// DeleteWithCategory deletes an event and removes its custom category
-// if no other event uses that category.
+// löscht ein Event und entfernt dessen benutzerdefinierte Kategorie
+// falls kein anderes Event diese Kategorie verwendet
 func (m *EventModel) DeleteWithCategory(
 	ctx context.Context,
 	id int,
@@ -200,8 +198,8 @@ func (m *EventModel) DeleteWithCategory(
 
 }
 
-// resolveCategory returns an existing category ID or creates a custom category.
-// Provide either CategoryId or CategoryName, not both.
+// Gibt eine vorhandene Kategorie-ID zurück oder erstellt eine benutzerdefinierte Kategorie
+// CategoryId || CategoryName, nicht beides
 func resolveCategory(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -271,7 +269,7 @@ func resolveCategory(
 
 }
 
-// deleteUnusedCustomCategory never deletes a standard category.
+// Standardkategorie wird niemals gelöscht
 func deleteUnusedCustomCategory(
 	ctx context.Context,
 	tx *sql.Tx,
