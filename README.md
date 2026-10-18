@@ -49,7 +49,8 @@ Events verfügen über einen Ersteller, Veranstaltungsdaten und eine Kategorie. 
 │  │   ├── auth.go          # Registrierung, Login, Tokens und Profil
 │  │   ├── events.go     # Event- und Teilnehmer-Handler
 │  │   ├── categories.go # HTTP-Handler zum Abrufen aller Kategorien
-│  │   └── context.go    # Helper zum Extrahieren des authentifizierten Benutzers aus dem │  └── migrate
+│  │   └── context.go    # Helper zum Extrahieren des authentifiziert.Benutzers
+│  └── migrate
 │       └── migrations
 │           ├── 000001_create_users_table.up.sql
 │           ├── 000004_create_categories_table.up.sql
@@ -188,7 +189,6 @@ Die Teilnehmerliste liefert Benutzerinformationen aus den Feldern `id`, `name` u
 Die SQLite-Datenbank wird durch die Migrationen `000001` bis `000004` strukturiert. Die Migrationen definieren die Tabellen `users`, `events`, `attendees` und `categories` einschließlich der unten aufgeführten Datentypen, Standardwerte und Constraints.
 
 ### `users`
-
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
@@ -218,9 +218,6 @@ Die Migration deklariert einen Fremdschlüssel von `owner_id` auf `users.id`.
 Die Kategorie wird stattdessen in der Anwendung durch `resolveCategory` validiert bzw. aufgelöst. 
 
 ### `attendees`
-
-Quelle: `000003_create_attendees_table.up.sql`
-
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
@@ -231,7 +228,6 @@ Die Migration definiert Fremdschlüssel auf `users` und `events`, aber **keinen 
 Die API prüft vor dem Eintragen, ob die Teilnahme bereits existiert.
 
 ### `categories`
-
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `TEXT` | Primärschlüssel (`PRIMARY KEY`); Systemkategorien verwenden feste IDs, benutzerdefinierte Kategorien zufällig erzeugte hexadezimale IDs |
@@ -274,61 +270,6 @@ Das Projekt folgt einer klaren Separation of Concerns (SoC), trennt HTTP-Verarbe
 
 Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Kategorieauflösung in einer Transaktion zusammengefasst. Eine Kategorie wird entweder anhand einer gültigen `categoryId` gefunden oder anhand von `categoryName` wiederverwendet bzw. neu angelegt. Beim Wechsel oder Löschen eines Events wird geprüft, ob die bisherige benutzerdefinierte Kategorie noch von anderen Events verwendet wird.
 
-### System-Architektur
-```
-                                      Frontend / HTTP-Client
-                                              │
-┌──────────────────────────────────────────── ▼ ────────────────────────────────────────┐
-│                        Gin HTTP-Server (gin.Default)
-                    - Gin Logger und Recovery
-    - CORSMiddleware (global; behandelt auch OPTIONS-Preflight)                            │
-│  ┌─────────────────────────┐      ┌───────────────────────────┐  ┌──────────────────┐ │
-│  │       Routes            │      │ Application Methods       │  │    Middleware    │ │
-│  │                         │      │                           │  │                  │ │
-│  │ Öffentliche API-Routen: │────▸ │ Auth                      │  │ - CORSMiddleware │ │
-│  │ Präfix: /api/v1         │────▸ │ Auth                      │  │ - CORSMiddleware │ │
-│  │ Auth                    │      │  - registerUser           │  │   (Global)       │ │
-│  │ -POST /auth/register    │      │  - registerUser           │  │   (Global)       │ │
-│  │ -POST /auth/login       │      │  - login                  │  │                 
-│  │ -POST /auth/refresh     │      │  - login                  │  │                  │ │
-│  │ -POST /auth/logout      │      │  - login                  │  │                  │ │
-│  │ Events                  │      │                           │  │                  │ │
-│  │ -GET /events            │      │ Events (Read)             │  │ - AuthMiddleware │ │
-│  │ -GET /events/:id        │      │  - getAllEvents           │  │   (JWT für       │ │
-│  │ Kategorien              │      │  - getEvent               │  │   geschützte     │ │
-│  │ - GET/categories        │      │  - getEvent               │  │   geschützte     │ │
-│  │ Teilnehmer              │      │                           │  │   Routen)        │ │
-│  │-GET /events/:id/        │      │                           │  │   Routen)        │ │
-│  │attendees                │      │ Events (Write)            │  │                  │ │
-│  │-GET /attendees/:id/     │      │  - createEvent            │  │                  │ │
-│  │ events                  │      │  - createEvent            │  │                  │ │
-│  │                         │      │  - createEvent            │  │                  │ │
-│  │ Geschützte API-Routen:  │      │  - updateEvent            │  │                  │ │
-│  │  Präfix: /api/v1        │      │  - updateEvent            │  │                  │ │
-│  │ AuthMiddleware          │      │  - deleteEvent            │  │                  │ │
-│  │ -prüft Authorization:   │      │                           │  │                  │ │
-│  │ - DELETE /events/:id    │      │ Attendees                 │  │                  │ │
-│  │ - POST /events/:id/     │      │  - getAttendeesForEvent   │  │                  │ │
-│  │ attendees/:userId       │      │  - GetAttendeesByEvent    │  │                  │ │
-│  │ - DELETE /events/:id/   │      │  - getEventsByAttendee    │  │                  │ │
-│  │ attendees/:userId       │      │  - deleteAttendeeFromEvent│  │                  │ │
-│  │                         │      │  - addAttendeeToEvent     │  │                  │ │
-│  └─────────────────────────┘      └───────────────────────────┘  └──────────────────┘ │
-│                                                 │                                     │
-│                                                 ▼                                     │
-│                       SQLite Driver (database/sql + modernc.org/sqlite)               │
-└─────────────────────────────────────────────────┼─────────────────────────────────────┘
-                                                  │
-                                                  ▼
-┌───────────────────────────────────────────────────────────────────────────────────────┐
-│                               SQLite Database (data.db)                               │
-│                                                                                       │
-│  Tabellen:                                                                            │
-│  - users (id, name, email, password_hash, created_at)                                 │
-│  - events (id, title, description, date, creator_id, created_at, etc.)                │
-│  - event_attendees (event_id, user_id) - Join Table für M:N-Beziehung                 │
-└───────────────────────────────────────────────────────────────────────────────────────┘
-```
 ### System-Architektur
 
 ```text
