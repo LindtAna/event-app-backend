@@ -3,7 +3,14 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"strings"
 	"time"
+)
+
+var (
+	ErrUserNotFound = errors.New("user not found")
+	ErrInvalidUser  = errors.New("invalid user")
 )
 
 type UserModel struct {
@@ -12,20 +19,59 @@ type UserModel struct {
 
 type User struct {
 	Id        int    `json:"id"`
+	TenantID  int    `json:"tenantId"`
 	Name      string `json:"name"`
 	Email     string `json:"email"`
 	Password  string `json:"-"`
 	Bio       string `json:"bio"`
 	AvatarUrl string `json:"avatarUrl"`
+	Role      string `json:"role"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt"`
 }
 
-func (m *UserModel) Insert(user *User) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+const userSelect = `
+	SELECT id, tenant_id, name, email, password_hash,
+	       bio, avatar_url, role, status, created_at
+	FROM users
+`
 
-	query := "INSERT INTO users(email, password, name, bio, avatar_url) VALUES(?, ?, ?, '', '')"
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
 
-	result, err := m.DB.ExecContext(ctx, query, user.Email, user.Password, user.Name)
+// enthält die allgemeine Logik für das Hinzufügen eines Benutzers
+func insertUserTx(ctx context.Context, tx *sql.Tx, user *User) error {
+	if user == nil || user.TenantID <= 0 ||
+		strings.TrimSpace(user.Name) == "" ||
+		normalizeEmail(user.Email) == "" ||
+		user.Password == "" {
+		return ErrInvalidUser
+	}
+
+	if user.Role == "" {
+		user.Role = "member"
+	}
+	if user.Status == "" {
+		user.Status = "active"
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO users (
+			tenant_id, email, name, password_hash,
+			bio, avatar_url, role, status
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		user.TenantID,
+		normalizeEmail(user.Email),
+		strings.TrimSpace(user.Name),
+		user.Password,
+		user.Bio,
+		user.AvatarUrl,
+		user.Role,
+		user.Status,
+	)
 	if err != nil {
 		return err
 	}
@@ -36,21 +82,47 @@ func (m *UserModel) Insert(user *User) error {
 	}
 
 	user.Id = int(id)
+	user.Email = normalizeEmail(user.Email)
 	return nil
 }
 
-func (m *UserModel) getUser(query string, args ...interface{}) (*User, error) {
+func (m *UserModel) Insert(user *User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	tx, err := m.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := insertUserTx(ctx, tx, user); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (m *UserModel) getUser(
+	ctx context.Context, query string,
+	args ...interface{}) (*User, error) {
 	var user User
 
 	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
-		&user.Id, &user.Name, &user.Email, &user.Password, &user.Bio, &user.AvatarUrl,
+		&user.Id,
+		&user.TenantID,
+		&user.Name,
+		&user.Email,
+		&user.Password,
+		&user.Bio,
+		&user.AvatarUrl,
+		&user.Role,
+		&user.Status,
+		&user.CreatedAt,
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
@@ -60,13 +132,33 @@ func (m *UserModel) getUser(query string, args ...interface{}) (*User, error) {
 }
 
 func (m *UserModel) Get(id int) (*User, error) {
-	query := "SELECT id, name, email, password, bio, avatar_url FROM users WHERE id = ?"
-	return m.getUser(query, id)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	return m.getUser(ctx, userSelect+` WHERE id = ?`, id)
 }
 
 func (m *UserModel) GetByEmail(email string) (*User, error) {
-	query := "SELECT id, name, email, password, bio, avatar_url FROM users WHERE email = ?"
-	return m.getUser(query, email)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	return m.getUser(
+		ctx,
+		userSelect+` WHERE email = ?`,
+		normalizeEmail(email),
+	)
+}
+
+func (m *UserModel) GetByIDInTenant(
+	ctx context.Context,
+	tenantID, userID int,
+) (*User, error) {
+	return m.getUser(
+		ctx,
+		userSelect+` WHERE tenant_id = ? AND id = ?`,
+		tenantID,
+		userID,
+	)
 }
 
 // Aktualisierung des Profils
@@ -74,7 +166,27 @@ func (m *UserModel) UpdateProfile(id int, name, bio, avatarUrl string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := "UPDATE users SET name = ?, bio = ?, avatar_url = ? WHERE id = ?"
-	_, err := m.DB.ExecContext(ctx, query, name, bio, avatarUrl, id)
-	return err
+	result, err := m.DB.ExecContext(ctx, `
+		UPDATE users
+		SET name = ?, bio = ?, avatar_url = ?
+		WHERE id = ? AND status = 'active'
+	`,
+		strings.TrimSpace(name),
+		bio,
+		avatarUrl,
+		id,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrUserNotFound
+	}
+
+	return nil
 }
