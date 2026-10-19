@@ -287,7 +287,7 @@ Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Katego
 │  │  │ Präfix: /api/v1            │        │ Präfix: /api/v1                       │  │  │
 │  │  │                            │        │                                       │  │  │
 │  │  │ Auth                       │        │ AuthMiddleware                        │  │  │
-│  │  │- POST /auth/register       │        │ - prüft  Authorization:               │  │  │
+│  │  │- POST /auth/register       │        │- prüft  Authorization:               │  │  │
 │  │  │- POST /auth/login          │        │  Bearer <accessToken>                 │  │  │
 │  │  │- POST /auth/refresh        │        │- prüft JWT und Benutzer               │  │  │
 │  │  │- POST /auth/logout         │        │                                       │  │  │
@@ -300,7 +300,7 @@ Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Katego
 │  │  │- GET /categories           │        │- DELETE /events/:id                   │  │  │
 │  │  │                            │        │                                       │  │  │
 │  │  │Teilnehmer                  │        │Teilnahmeverwaltung                    │  │  │
-│  │  │- GET /events/:id/attendees │        │ - POST /events/:id/  attendees/:userId│  │  │
+│  │  │- GET /events/:id/attendees │        │- POST /events/:id/  attendees/:userId │  │  │
 │  │  │- GET /attendees/:id/events │        │- DELETE /events/:id/attendees/:userId │  │  │
 │  │  └────────────────────────────┘        └───────────────────────────────────────┘  │  │
 │  └───────────────────────────────────────────────────────────────────────────────────┘  │
