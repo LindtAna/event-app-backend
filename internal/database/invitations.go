@@ -211,7 +211,7 @@ func (m *InvitationModel) Revoke(
 	return nil
 }
 
-// RegisterMember erstellt ein neues Mitglied
+// erstellt ein neues Mitglied
 // verbraucht die Einladung atomar in einer Transaktion
 // TenantID und Rolle des Nutzers werden dabei überschrieben, um Manipulationen zu verhindern
 func (m *InvitationModel) RegisterMember(
@@ -274,13 +274,15 @@ func (m *InvitationModel) RegisterMember(
 		return ErrInvalidInvitation
 	}
 
-	// Sicherheitsrelevante Felder des Benutzers überschreiben
-	user.TenantID = tenantID
-	user.Role = "member"
-	user.Status = "active"
+	// Mit einer lokalen Kopie arbeiten, damit ein fehlgeschlagener
+	// Commit den übergebenen User-Pointer nicht mit unvollständigen Daten manipuliert
+	userToRegister := *user
+	userToRegister.TenantID = tenantID
+	userToRegister.Role = "member"
+	userToRegister.Status = "active"
 
 	// Benutzer innerhalb derselben Transaktion einfügen
-	if err := insertUserTx(ctx, tx, user); err != nil {
+	if err := insertUserTx(ctx, tx, &userToRegister); err != nil {
 		return err
 	}
 
@@ -306,5 +308,11 @@ func (m *InvitationModel) RegisterMember(
 	}
 
 	// Transaktion erfolgreich abschließen
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Den User erst nach erfolgreichem Commit aktualisieren
+	*user = userToRegister
+
+	return nil
 }
