@@ -206,3 +206,9 @@ cd ..\EventAppClient\client
 gofmt -w internal/database/events.go internal/database/attendees.go internal/database/event_categories.go internal/database/categories.go cmd/api/events.go cmd/api/categories.go
 go test ./...
 go build
+
+проверка сборки
+gofmt -w cmd/api/routes.go
+go test ./...
+
+go build ./cmd/api
