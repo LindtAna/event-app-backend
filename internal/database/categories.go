@@ -15,16 +15,19 @@ type CategoryModel struct {
 	DB *sql.DB
 }
 
-func (m CategoryModel) GetAll(ctx context.Context) ([]Category, error) {
+func (m CategoryModel) GetAll(
+	ctx context.Context,
+	tenantID int) ([]Category, error) {
 	query := `
 		SELECT id, name, is_default
 		FROM categories
+		WHERE tenant_id = ?
 		ORDER BY is_default DESC, name COLLATE NOCASE ASC
 	`
 	//Die Standard-Systemkategorien -> immer oben in der Liste,
 	// benutzerdefinierte Kategorien werden sortiert alphabetisch
 
-	rows, err := m.DB.QueryContext(ctx, query)
+	rows, err := m.DB.QueryContext(ctx, query, tenantID)
 	if err != nil {
 		return nil, err
 	}

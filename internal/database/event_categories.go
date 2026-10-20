@@ -10,10 +10,7 @@ import (
 	"time"
 )
 
-var (
-	ErrInvalidCategory   = errors.New("invalid or missing category")
-	ErrInvalidEventScope = errors.New("invalid tenant or owner context")
-)
+var ErrInvalidCategory = errors.New("invalid or missing category")
 
 // erstellt ein Event und löst dessen Kategorie innerhalb derselben Transaktion auf
 func (m *EventModel) CreateWithCategory(ctx context.Context, tenantID int, event *Event) error {
@@ -34,17 +31,13 @@ func (m *EventModel) CreateWithCategory(ctx context.Context, tenantID int, event
 		return err
 	}
 
-	query := `
-	INSERT INTO events (
-		tenant_id,owner_id, title, description, image_url, location,
-		start_date_time, end_date_time, category_id, url
-	)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`
-
-	result, err := tx.ExecContext(
-		ctx,
-		query,
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO events (
+			tenant_id, owner_id, title, description, image_url,
+			location, start_date_time, end_date_time, category_id, url
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
 		tenantID,
 		event.OwnerId,
 		event.Title,
@@ -100,8 +93,8 @@ func (m *EventModel) UpdateWithCategory(
 		ctx,
 		`SELECT category_id FROM events
 		WHERE id = ? AND tenant_id = ? AND owner_id = ?`,
-		event.Id,
 		tenantID,
+		event.Id,
 		ownerID,
 	).Scan(&oldCategoryID)
 	if err != nil {
@@ -113,16 +106,18 @@ func (m *EventModel) UpdateWithCategory(
 		return err
 	}
 
-	query := `
-	UPDATE events
-	SET title = ?, description = ?, image_url = ?, location = ?,
-	    start_date_time = ?, end_date_time = ?, category_id = ?, url = ?
-	WHERE id = ? AND tenant_id = ? AND owner_id = ?
-`
-
-	result, err := tx.ExecContext(
-		ctx,
-		query,
+	result, err := tx.ExecContext(ctx, `
+		UPDATE events
+		SET title = ?,
+		    description = ?,
+		    image_url = ?,
+		    location = ?,
+		    start_date_time = ?,
+		    end_date_time = ?,
+		    category_id = ?,
+		    url = ?
+		WHERE tenant_id = ? AND id = ? AND owner_id = ?
+	`,
 		event.Title,
 		event.Description,
 		event.ImageUrl,
@@ -131,8 +126,8 @@ func (m *EventModel) UpdateWithCategory(
 		event.EndDateTime,
 		newCategoryID,
 		event.Url,
-		event.Id,
 		tenantID,
+		event.Id,
 		ownerID,
 	)
 	if err != nil {
@@ -191,8 +186,8 @@ func (m *EventModel) DeleteWithCategory(
 		ctx,
 		`SELECT category_id FROM events
 		WHERE id = ? AND tenant_id = ? AND owner_id = ?`,
-		eventID,
 		tenantID,
+		eventID,
 		ownerID,
 	).Scan(&categoryID)
 
@@ -204,8 +199,8 @@ func (m *EventModel) DeleteWithCategory(
 		ctx,
 		`DELETE FROM events
 		WHERE id = ? AND tenant_id = ? AND owner_id = ?`,
-		eventID,
 		tenantID,
+		eventID,
 		ownerID,
 	)
 	if err != nil {

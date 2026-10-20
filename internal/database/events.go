@@ -3,8 +3,11 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
+
+var ErrInvalidEventScope = errors.New("invalid tenant or owner context")
 
 type EventModel struct {
 	DB *sql.DB
@@ -30,119 +33,34 @@ type Event struct {
 	Url           string `json:"url"`
 }
 
-func (m *EventModel) Insert(event *Event) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	query := `
-		INSERT INTO events(owner_id, title, description,
-		image_url, location, start_date_time, end_date_time,
-		category_id, url)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-	result, err := m.DB.ExecContext(
-		ctx,
-		query,
-		event.OwnerId,
-		event.Title,
-		event.Description,
-		event.ImageUrl,
-		event.Location,
-		event.StartDateTime,
-		event.EndDateTime,
-		event.CategoryId,
-		event.Url,
-	)
-	if err != nil {
-		return err
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-
-	event.Id = int(id)
-	return nil
-
+type eventScanner interface {
+	Scan(dest ...any) error
 }
 
-func (m *EventModel) GetAll() ([]*Event, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+const eventSelect = `
+	SELECT
+		e.id,
+		e.owner_id,
+		e.title,
+		e.description,
+		e.image_url,
+		e.location,
+		e.start_date_time,
+		e.end_date_time,
+		e.category_id,
+		e.url,
+		COALESCE(u.name, '')
+	FROM events e
+	LEFT JOIN users u
+		ON u.tenant_id = e.tenant_id
+		AND u.id = e.owner_id
+`
 
-	query := `
-		SELECT e.id, e.owner_id, e.title, e.description, e.image_url,
-		       e.location, e.start_date_time, e.end_date_time,
-		       e.category_id, e.url, COALESCE(u.name, '') AS owner_name
-		FROM events e
-		LEFT JOIN users u ON e.owner_id = u.id
-	`
-	rows, err := m.DB.QueryContext(ctx, query)
-
-	if err != nil {
-		return nil, err
-	}
-
-	defer rows.Close()
-
-	events := []*Event{}
-
-	for rows.Next() {
-		var event Event
-		var ownerName string
-
-		err := rows.Scan(
-			&event.Id,
-			&event.OwnerId,
-			&event.Title,
-			&event.Description,
-			&event.ImageUrl,
-			&event.Location,
-			&event.StartDateTime,
-			&event.EndDateTime,
-			&event.CategoryId,
-			&event.Url,
-			&ownerName,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if event.OwnerId > 0 {
-			event.Owner = &Owner{
-				Id:   event.OwnerId,
-				Name: ownerName,
-			}
-		}
-
-		events = append(events, &event)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return events, nil
-}
-
-func (m *EventModel) Get(id int) (*Event, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	query := `
-		SELECT e.id, e.owner_id, e.title, e.description, e.image_url,
-		       e.location, e.start_date_time, e.end_date_time,
-		       e.category_id, e.url, COALESCE(u.name, '') AS owner_name
-		FROM events e
-		LEFT JOIN users u ON e.owner_id = u.id
-		WHERE e.id = ?
-	`
-
+func scanEvent(row eventScanner) (*Event, error) {
 	var event Event
 	var ownerName string
 
-	err := m.DB.QueryRowContext(ctx, query, id).Scan(
+	err := row.Scan(
 		&event.Id,
 		&event.OwnerId,
 		&event.Title,
@@ -156,9 +74,6 @@ func (m *EventModel) Get(id int) (*Event, error) {
 		&ownerName,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
 		return nil, err
 	}
 
@@ -172,63 +87,137 @@ func (m *EventModel) Get(id int) (*Event, error) {
 	return &event, nil
 }
 
-func (m *EventModel) GetByOwnerID(ownerID int) ([]*Event, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+// func (m *EventModel) Insert(event *Event) error {
+// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+// 	defer cancel()
+
+// 	query := `
+// 		INSERT INTO events(owner_id, title, description,
+// 		image_url, location, start_date_time, end_date_time,
+// 		category_id, url)
+// 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+// 	`
+// 	result, err := m.DB.ExecContext(
+// 		ctx,
+// 		query,
+// 		event.OwnerId,
+// 		event.Title,
+// 		event.Description,
+// 		event.ImageUrl,
+// 		event.Location,
+// 		event.StartDateTime,
+// 		event.EndDateTime,
+// 		event.CategoryId,
+// 		event.Url,
+// 	)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	id, err := result.LastInsertId()
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	event.Id = int(id)
+// 	return nil
+
+// }
+
+func (m *EventModel) GetAll(
+	ctx context.Context,
+	tenantID int,
+) ([]*Event, error) {
+	return m.queryEvents(ctx, tenantID, nil)
+}
+
+func (m *EventModel) queryEvents(
+	ctx context.Context,
+	tenantID int,
+	ownerID *int,
+) ([]*Event, error) {
+	if tenantID <= 0 {
+		return nil, ErrInvalidEventScope
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	query := `
-		SELECT e.id, e.owner_id, e.title, e.description, e.image_url,
-		       e.location, e.start_date_time, e.end_date_time,
-		       e.category_id, e.url, COALESCE(u.name, '') AS owner_name
-		FROM events e
-		LEFT JOIN users u ON e.owner_id = u.id
-		WHERE e.owner_id = ?
+	query := eventSelect + `
+		WHERE e.tenant_id = ?
 	`
+	args := []any{tenantID}
 
-	rows, err := m.DB.QueryContext(ctx, query, ownerID)
+	if ownerID != nil {
+		query += ` AND e.owner_id = ?`
+		args = append(args, *ownerID)
+	}
+
+	query += ` ORDER BY e.start_date_time ASC`
+
+	rows, err := m.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	events := []*Event{}
+	events := make([]*Event, 0)
 
 	for rows.Next() {
-		var event Event
-		var ownerName string
-
-		err := rows.Scan(
-			&event.Id,
-			&event.OwnerId,
-			&event.Title,
-			&event.Description,
-			&event.ImageUrl,
-			&event.Location,
-			&event.StartDateTime,
-			&event.EndDateTime,
-			&event.CategoryId,
-			&event.Url,
-			&ownerName,
-		)
+		event, err := scanEvent(rows)
 		if err != nil {
 			return nil, err
 		}
 
-		if event.OwnerId > 0 {
-			event.Owner = &Owner{
-				Id:   event.OwnerId,
-				Name: ownerName,
-			}
-		}
-
-		events = append(events, &event)
+		events = append(events, event)
 	}
 
-	if err = rows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
 	return events, nil
+}
+
+func (m *EventModel) Get(
+	ctx context.Context,
+	tenantID int,
+	eventID int,
+) (*Event, error) {
+	if tenantID <= 0 || eventID <= 0 {
+		return nil, ErrInvalidEventScope
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	query := eventSelect + `
+		WHERE e.tenant_id = ? AND e.id = ?
+	`
+
+	event, err := scanEvent(
+		m.DB.QueryRowContext(ctx, query, tenantID, eventID),
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return event, nil
+}
+
+func (m *EventModel) GetByOwnerID(
+	ctx context.Context,
+	tenantID int,
+	ownerID int,
+) ([]*Event, error) {
+	if ownerID <= 0 {
+		return nil, ErrInvalidEventScope
+	}
+
+	return m.queryEvents(ctx, tenantID, &ownerID)
 }
 
 func (m *EventModel) Update(event *Event) error {

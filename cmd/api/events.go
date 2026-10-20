@@ -10,42 +10,73 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func eventRequestScope(c *gin.Context) (userID, tenantID int, ok bool) {
+	userValue, userExists := c.Get("userId")
+	tenantValue, tenantExists := c.Get("tenantId")
+
+	if !userExists || !tenantExists {
+		return 0, 0, false
+	}
+
+	userID, userOK := userValue.(int)
+	tenantID, tenantOK := tenantValue.(int)
+
+	if !userOK || !tenantOK || userID <= 0 || tenantID <= 0 {
+		return 0, 0, false
+	}
+
+	return userID, tenantID, true
+}
+
+func parsePositiveID(value string) (int, error) {
+	id, err := strconv.Atoi(value)
+	if err != nil || id <= 0 {
+		return 0, errors.New("invalid ID")
+	}
+	return id, nil
+}
+
 // CreateEvent creates a new event
 //
-//	@Summary Creates a new event
-//	@Description Creates a new event
-//	@Tags events
-//	@Accept json
-//	@Produce json
-//	@Param event body database.Event true "Event"
-//	@Success 201 {object} database.Event
-//	@Router /api/v1/events [post]
-//	@Security BearerAuth
+// @Summary Creates an event in the authenticated tenant
+// @Tags events
+// @Accept json
+// @Produce json
+// @Param event body database.Event true "Event"
+// @Success 201 {object} database.Event
+// @Router /api/v1/events [post]
+// @Security BearerAuth
 func (app *application) createEvent(c *gin.Context) {
-	var event database.Event
+	userID, tenantID, ok := eventRequestScope(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 
+	var event database.Event
 	if err := c.ShouldBindJSON(&event); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	userID, exists := c.Get("userId")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	event.OwnerId = userID.(int)
+	// Never trust OwnerId supplied by the client.
+	event.OwnerId = userID
 
 	err := app.models.Events.CreateWithCategory(
 		c.Request.Context(),
+		tenantID,
 		&event,
 	)
 	if err != nil {
 		if errors.Is(err, database.ErrInvalidCategory) {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Please select an existing category or provide a category name",
+				"error": "Please select a category belonging to your company or provide a category name",
 			})
+			return
+		}
+
+		if errors.Is(err, database.ErrInvalidEventScope) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 			return
 		}
 
@@ -60,31 +91,46 @@ func (app *application) createEvent(c *gin.Context) {
 
 // getAllEvents returns all events or filters them by ownerId
 //
-// @Summary Returns all events or filters by owner ID
-// @Description Returns a list of all events, optionally filtered by ownerId query parameter
+// @Summary Returns events belonging to the authenticated tenant
 // @Tags events
-// @Accept json
 // @Produce json
-// @Param ownerId query int false "Filter events by owner ID"
+// @Param ownerId query int false "Filter by event owner within the tenant"
 // @Success 200 {array} database.Event
-// @Failure 400 {object} map[string]string "Invalid ownerId parameter"
-// @Failure 500 {object} map[string]string "Failed to retrieve events"
 // @Router /api/v1/events [get]
+// @Security BearerAuth
 func (app *application) getAllEvents(c *gin.Context) {
+	_, tenantID, ok := eventRequestScope(c)
+
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var (
+		events []*database.Event
+		err    error
+	)
+
 	ownerIDParam := c.Query("ownerId")
 
-	var events []*database.Event
-	var err error
-
 	if ownerIDParam != "" {
-		ownerID, parseErr := strconv.Atoi(ownerIDParam)
+		ownerID, parseErr := parsePositiveID(ownerIDParam)
 		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ownerId parameter"})
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid ownerId parameter",
+			})
 			return
 		}
-		events, err = app.models.Events.GetByOwnerID(ownerID)
+		events, err = app.models.Events.GetByOwnerID(
+			c.Request.Context(),
+			tenantID,
+			ownerID,
+		)
 	} else {
-		events, err = app.models.Events.GetAll()
+		events, err = app.models.Events.GetAll(
+			c.Request.Context(),
+			tenantID,
+		)
 	}
 
 	if err != nil {
@@ -97,24 +143,33 @@ func (app *application) getAllEvents(c *gin.Context) {
 
 // GetEvent returns a single event
 //
-//	@Summary Returns a single event
-//	@Description Returns a single event
-//	@Tags events
-//	@Accept json
-//	@Produce json
-//	@Param id path int	true "Event ID"
-//	@Success 200	{object} database.Event
-//	@Router /api/v1/events/{id} [get]
+// @Summary Returns an event belonging to the authenticated tenant
+// @Tags events
+// @Produce json
+// @Param id path int true "Event ID"
+// @Success 200 {object} database.Event
+// @Router /api/v1/events/{id} [get]
+// @Security BearerAuth
 func (app *application) getEvent(c *gin.Context) {
+	_, tenantID, ok := eventRequestScope(c)
 
-	id, err := strconv.Atoi(c.Param("id"))
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	id, err := parsePositiveID(c.Param("id"))
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event id"})
 		return
 	}
 
-	event, err := app.models.Events.Get(id)
+	event, err := app.models.Events.Get(
+		c.Request.Context(),
+		tenantID,
+		id,
+	)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve event"})
@@ -131,32 +186,32 @@ func (app *application) getEvent(c *gin.Context) {
 
 // UpdateEvent updates an existing event
 //
-//	@Summary Updates an existing event
-//	@Description Updates an existing event
-//	@Tags events
-//	@Accept json
-//	@Produce json
-//	@Param id path int	true "Event ID"
-//	@Param event body database.Event true "Event"
-//	@Success 200	{object} database.Event
-//	@Router /api/v1/events/{id} [put]
-//	@Security BearerAuth
+// @Summary Updates an event created by the authenticated user
+// @Tags events
+// @Accept json
+// @Produce json
+// @Param id path int true "Event ID"
+// @Param event body database.Event true "Updated event"
+// @Success 200 {object} database.Event
+// @Router /api/v1/events/{id} [put]
+// @Security BearerAuth
 func (app *application) updateEvent(c *gin.Context) {
-
-	id, err := strconv.Atoi(c.Param("id"))
-
+	userID, tenantID, ok := eventRequestScope(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	id, err := parsePositiveID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event id"})
 		return
 	}
 
-	userID, exists := c.Get("userId")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	existingEvent, err := app.models.Events.Get(id)
+	existingEvent, err := app.models.Events.Get(
+		c.Request.Context(),
+		tenantID,
+		id,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve event"})
 		return
@@ -167,87 +222,98 @@ func (app *application) updateEvent(c *gin.Context) {
 		return
 	}
 
-	if existingEvent.OwnerId != userID.(int) {
+	if existingEvent.OwnerId != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You are not authorised to update this event"})
 		return
 	}
 
-	updatedEvent := &database.Event{}
-	if err := c.ShouldBindJSON(updatedEvent); err != nil {
+	var updatedEvent database.Event
+	if err := c.ShouldBindJSON(&updatedEvent); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	// ID and owner always come from the path and authenticated context.
 	updatedEvent.Id = id
-	updatedEvent.OwnerId = userID.(int)
+	updatedEvent.OwnerId = userID
 
-	if err := app.models.Events.UpdateWithCategory(
+	err = app.models.Events.UpdateWithCategory(
 		c.Request.Context(),
-		updatedEvent,
-	); err != nil {
-		if errors.Is(err, database.ErrInvalidCategory) {
+		tenantID,
+		userID,
+		&updatedEvent,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, database.ErrInvalidCategory):
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Please select an existing category or provide a category name",
+				"error": "Please select a category belonging to your company or provide a category name",
 			})
-			return
-		}
-
-		if errors.Is(err, sql.ErrNoRows) {
+		case errors.Is(err, sql.ErrNoRows):
 			c.JSON(http.StatusNotFound, gin.H{"error": "Event not found"})
-			return
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to update event",
+			})
 		}
-
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to update event",
-		})
 		return
 	}
-
 	c.JSON(http.StatusOK, updatedEvent)
 }
 
 // DeleteEvent deletes an existing event
 //
-//	@Summary Deletes an existing event
-//	@Description Deletes an existing event
-//	@Tags events
-//	@Accept json
-//	@Produce json
-//	@Param id	path int	true "Event ID"
-//	@Success 204
-//	@Router /api/v1/events/{id} [delete]
-//	@Security BearerAuth
+// @Summary Deletes an event created by the authenticated user
+// @Tags events
+// @Param id path int true "Event ID"
+// @Success 204
+// @Router /api/v1/events/{id} [delete]
+// @Security BearerAuth
 func (app *application) deleteEvent(c *gin.Context) {
+	userID, tenantID, ok := eventRequestScope(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 
-	id, err := strconv.Atoi(c.Param("id"))
+	id, err := parsePositiveID(c.Param("id"))
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event id"})
 		return
 	}
 
-	user := app.GetUserFromContext(c)
-	existingEvent, err := app.models.Events.Get(id)
-
+	event, err := app.models.Events.Get(
+		c.Request.Context(),
+		tenantID,
+		id,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve event"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve event",
+		})
 		return
 	}
 
-	if existingEvent == nil {
+	if event == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Event not found"})
 		return
 	}
 
-	if existingEvent.OwnerId != user.Id {
-		c.JSON(http.StatusForbidden, gin.H{"error": "You are not authorised to delete this event"})
+	if event.OwnerId != userID {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "You are not authorised to delete this event",
+		})
 		return
 	}
 
-	if err := app.models.Events.DeleteWithCategory(
+	err = app.models.Events.DeleteWithCategory(
 		c.Request.Context(),
+		tenantID,
+		userID,
 		id,
-	); err != nil {
+	)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Event not found"})
 			return
@@ -259,34 +325,41 @@ func (app *application) deleteEvent(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusNoContent, nil)
+	c.Status(http.StatusNoContent)
 }
 
 // AddAttendeeToEvent adds an attendee to an event
-// @Summary Adds an attendee to an event
-// @Description	Adds an attendee to an event
+// @Summary Adds a user from the same tenant to an event
 // @Tags attendees
-// @Accept json
-// @Produce json
-// @Param id	path int	true "Event ID"
-// @Param userId path int	true "User ID"
+// @Param id path int true "Event ID"
+// @Param userId path int true "User ID"
 // @Success 201 {object} database.Attendee
 // @Router /api/v1/events/{id}/attendees/{userId} [post]
 // @Security BearerAuth
 func (app *application) addAttendeeToEvent(c *gin.Context) {
-	eventId, err := strconv.Atoi(c.Param("id"))
+	currentUserID, tenantID, ok := eventRequestScope(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	eventID, err := parsePositiveID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event Id"})
 		return
 	}
 
-	userId, err := strconv.Atoi(c.Param("userId"))
+	targetUserID, err := parsePositiveID(c.Param("userId"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user Id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
 		return
 	}
 
-	event, err := app.models.Events.Get(eventId)
+	event, err := app.models.Events.Get(
+		c.Request.Context(),
+		tenantID,
+		eventID,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retreive event"})
 		return
@@ -297,44 +370,67 @@ func (app *application) addAttendeeToEvent(c *gin.Context) {
 		return
 	}
 
-	userToAdd, err := app.models.Users.Get(userId)
+	targetUser, err := app.models.Users.GetByIDInTenant(
+		c.Request.Context(),
+		tenantID,
+		targetUserID,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retreive user"})
 		return
 	}
 
-	if userToAdd == nil {
+	if targetUser == nil || targetUser.Status != "active" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
-	user := app.GetUserFromContext(c)
-
-	if event.OwnerId != user.Id && userToAdd.Id != user.Id {
+	if event.OwnerId != currentUserID && targetUserID != currentUserID {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "You are not authorised to add an attendee to this event",
 		})
 		return
 	}
 
-	existingAttendee, err := app.models.Attendees.GetByEventAndAttendee(event.Id, userToAdd.Id)
+	existing, err := app.models.Attendees.GetByEventAndAttendee(
+		c.Request.Context(),
+		tenantID,
+		eventID,
+		targetUserID,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retreive attendee"})
 		return
 	}
-	if existingAttendee != nil {
+	if existing != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Attendee already exists"})
 		return
 	}
 
-	attendee := database.Attendee{
-		EventId: event.Id,
-		UserId:  userToAdd.Id,
+	attendee := &database.Attendee{
+		EventId: eventID,
+		UserId:  targetUserID,
 	}
 
-	err = app.models.Attendees.Insert(&attendee)
+	err = app.models.Attendees.Insert(
+		c.Request.Context(),
+		tenantID,
+		attendee,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add attendee"})
+		if errors.Is(err, database.ErrAttendeeAlreadyExists) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Attendee already exists"})
+			return
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Event or user not found in this company",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to add attendee",
+		})
 		return
 	}
 
@@ -343,24 +439,47 @@ func (app *application) addAttendeeToEvent(c *gin.Context) {
 
 // GetAttendeesForEvent returns all attendees for a given event
 //
-//	@Summary Returns all attendees for a given event
-//	@Description Returns all attendees for a given event
-//	@Tags attendees
-//	@Accept json
-//	@Produce json
-//	@Param id path int true "Event ID"
-//	@Success 200 {object} []database.User
-//	@Router /api/v1/events/{id}/attendees [get]
+// @Summary Lists attendees for an event in the authenticated tenant
+// @Tags attendees
+// @Param id path int true "Event ID"
+// @Success 200 {array} database.User
+// @Router /api/v1/events/{id}/attendees [get]
+// @Security BearerAuth
 func (app *application) getAttendeesForEvent(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+	_, tenantID, ok := eventRequestScope(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	eventID, err := parsePositiveID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event Id"})
 		return
 	}
 
-	users, err := app.models.Attendees.GetAttendeesByEvent(id)
+	event, err := app.models.Events.Get(
+		c.Request.Context(),
+		tenantID,
+		eventID,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retreive attendees for events"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve event"})
+		return
+	}
+	if event == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Event not found"})
+		return
+	}
+	users, err := app.models.Attendees.GetAttendeesByEvent(
+		c.Request.Context(),
+		tenantID,
+		eventID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve attendees",
+		})
 		return
 	}
 
@@ -368,33 +487,41 @@ func (app *application) getAttendeesForEvent(c *gin.Context) {
 }
 
 // DeleteAttendeeFromEvent deletes an attendee from an event
-// @Summary		Deletes an attendee from an event
-// @Description	Deletes an attendee from an event
+// @Summary Removes an attendee from an event
 // @Tags attendees
-// @Accept json
-// @Produce json
-// @Param id path int	true "Event ID"
-// @Param userId path int	true "User ID"
+// @Param id path int true "Event ID"
+// @Param userId path int true "User ID"
 // @Success 204
 // @Router /api/v1/events/{id}/attendees/{userId} [delete]
 // @Security BearerAuth
 func (app *application) deleteAttendeeFromEvent(c *gin.Context) {
+	currentUserID, tenantID, ok := eventRequestScope(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 
-	id, err := strconv.Atoi(c.Param("id"))
+	eventID, err := parsePositiveID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event Id"})
 		return
 	}
 
-	userId, err := strconv.Atoi(c.Param("userId"))
+	targetUserID, err := parsePositiveID(c.Param("userId"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user Id"})
 		return
 	}
 
-	event, err := app.models.Events.Get(id)
+	event, err := app.models.Events.Get(
+		c.Request.Context(),
+		tenantID,
+		eventID,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Something went wrong"})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve event",
+		})
 		return
 	}
 
@@ -403,18 +530,28 @@ func (app *application) deleteAttendeeFromEvent(c *gin.Context) {
 		return
 	}
 
-	user := app.GetUserFromContext(c)
-
-	if event.OwnerId != user.Id && userId != user.Id {
+	if event.OwnerId != currentUserID && targetUserID != currentUserID {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "You are not authorised to delete attendee to this event",
+			"error": "You are not authorised to remove this attendee",
 		})
 		return
 	}
 
-	err = app.models.Attendees.Delete(userId, id)
+	err = app.models.Attendees.Delete(
+		c.Request.Context(),
+		tenantID,
+		targetUserID,
+		eventID,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete attendee"})
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Attendee not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to remove attendee",
+		})
 		return
 	}
 
@@ -423,22 +560,46 @@ func (app *application) deleteAttendeeFromEvent(c *gin.Context) {
 
 // GetEventsByAttendee returns all events for a given attendee
 //
-//	@Summary Returns all events for a given attendee
-//	@Description Returns all events for a given attendee
-//	@Tags attendees
-//	@Accept json
-//	@Produce json
-//	@Param	 id path int	true "Attendee ID"
-//	@Success 200	{object} []database.Event
-//	@Router /api/v1/attendees/{id}/events [get]
+// @Summary Lists events for a user in the authenticated tenant
+// @Tags attendees
+// @Param id path int true "User ID"
+// @Success 200 {array} database.Event
+// @Router /api/v1/attendees/{id}/events [get]
+// @Security BearerAuth
 func (app *application) getEventsByAttendee(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+	_, tenantID, ok := eventRequestScope(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	attendeeID, err := parsePositiveID(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid attendee Id"})
 		return
 	}
 
-	events, err := app.models.Attendees.GetEventsByAttendee(id)
+	user, err := app.models.Users.GetByIDInTenant(
+		c.Request.Context(),
+		tenantID,
+		attendeeID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve user",
+		})
+		return
+	}
+	if user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	events, err := app.models.Attendees.GetEventsByAttendee(
+		c.Request.Context(),
+		tenantID,
+		attendeeID,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get events"})
 		return

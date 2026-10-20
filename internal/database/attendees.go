@@ -3,8 +3,11 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
+
+var ErrAttendeeAlreadyExists = errors.New("attendee already exists")
 
 type AttendeeModel struct {
 	DB *sql.DB
@@ -16,15 +19,70 @@ type Attendee struct {
 	EventId int `json:"eventId"`
 }
 
-func (m *AttendeeModel) Insert(attendee *Attendee) error {
+func (m *AttendeeModel) Insert(
+	ctx context.Context,
+	tenantID int,
+	attendee *Attendee,
+) error {
+	if tenantID <= 0 || attendee == nil || attendee.EventId <= 0 || attendee.UserId <= 0 {
+		return ErrInvalidEventScope
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := "INSERT INTO attendees(event_id, user_id) VALUES(?, ?)"
-
-	result, err := m.DB.ExecContext(ctx, query, attendee.EventId, attendee.UserId)
+	tx, err := m.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
+	}
+	defer tx.Rollback()
+
+	var valid int
+
+	err = tx.QueryRowContext(ctx, `
+		SELECT
+			EXISTS (
+				SELECT 1 FROM events
+				WHERE tenant_id = ? AND id = ?
+			)
+			AND EXISTS (
+				SELECT 1 FROM users
+				WHERE tenant_id = ?
+				  AND id = ?
+				  AND status = 'active'
+			)
+	`,
+		tenantID, attendee.EventId,
+		tenantID, attendee.UserId,
+	).Scan(&valid)
+	if err != nil {
+		return err
+	}
+
+	if valid != 1 {
+		return sql.ErrNoRows
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO attendees (tenant_id, event_id, user_id)
+		VALUES (?, ?, ?)
+		ON CONFLICT (tenant_id, event_id, user_id) DO NOTHING
+	`,
+		tenantID,
+		attendee.EventId,
+		attendee.UserId,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return ErrAttendeeAlreadyExists
 	}
 
 	id, err := result.LastInsertId()
@@ -32,74 +90,128 @@ func (m *AttendeeModel) Insert(attendee *Attendee) error {
 		return err
 	}
 
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
 	attendee.Id = int(id)
 	return nil
-
 }
 
-func (m *AttendeeModel) GetByEventAndAttendee(eventId, userId int) (*Attendee, error) {
+func (m *AttendeeModel) GetByEventAndAttendee(
+	ctx context.Context,
+	tenantID int,
+	eventID int,
+	userID int,
+) (*Attendee, error) {
+
+	if tenantID <= 0 || eventID <= 0 || userID <= 0 {
+		return nil, ErrInvalidEventScope
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	// query := "SELECT * FROM attendees WHERE event_id = ? AND user_id = ?"
-	query := "SELECT id, event_id, user_id FROM attendees WHERE event_id = ? AND user_id = ?"
+	query := `
+		SELECT id, event_id, user_id
+		FROM attendees
+		WHERE tenant_id = ?
+		  AND event_id = ?
+		  AND user_id = ?
+	`
 
 	var attendee Attendee
 
-	err := m.DB.QueryRowContext(ctx, query, eventId, userId).Scan(&attendee.Id, &attendee.UserId, &attendee.EventId)
+	err := m.DB.QueryRowContext(ctx, query, tenantID, eventID, userID).Scan(
+		&attendee.Id,
+		&attendee.EventId,
+		&attendee.UserId,
+	)
 
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
 		return nil, err
 	}
 
 	return &attendee, nil
 }
 
-func (m *AttendeeModel) GetAttendeesByEvent(eventId int) ([]*User, error) {
+func (m *AttendeeModel) GetAttendeesByEvent(
+	ctx context.Context,
+	tenantID int,
+	eventID int,
+) ([]*User, error) {
+	if tenantID <= 0 || eventID <= 0 {
+		return nil, ErrInvalidEventScope
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	query := `
-	SELECT u.id, u.name, u.email
-	FROM users u
-	JOIN attendees a ON u.id = a.user_id
-	WHERE a.event_id = ?
+		SELECT u.id, u.name, u.email
+		FROM attendees a
+		JOIN users u
+			ON u.tenant_id = a.tenant_id
+			AND u.id = a.user_id
+		WHERE a.tenant_id = ?
+		  AND a.event_id = ?
+		ORDER BY u.name COLLATE NOCASE
 	`
 
-	rows, err := m.DB.QueryContext(ctx, query, eventId)
+	rows, err := m.DB.QueryContext(ctx, query, tenantID, eventID)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
-	var users []*User
+	// var users []*User
+	users := make([]*User, 0)
 
 	for rows.Next() {
 		var user User
-		err := rows.Scan(&user.Id, &user.Name, &user.Email)
-		if err != nil {
+
+		if err := rows.Scan(&user.Id, &user.Name, &user.Email); err != nil {
 			return nil, err
 		}
 		users = append(users, &user)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return users, nil
 }
 
-func (m *AttendeeModel) Delete(userId, eventId int) error {
+func (m *AttendeeModel) Delete(
+	ctx context.Context,
+	tenantID int,
+	userID int,
+	eventID int,
+) error {
+	if tenantID <= 0 || userID <= 0 || eventID <= 0 {
+		return ErrInvalidEventScope
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	query := "DELETE FROM attendees WHERE user_id = ? AND event_id=?"
-
-	result, err := m.DB.ExecContext(ctx, query, userId, eventId)
+	result, err := m.DB.ExecContext(ctx, `
+		DELETE FROM attendees
+		WHERE tenant_id = ?
+		  AND user_id = ?
+		  AND event_id = ?
+	`,
+		tenantID,
+		userID,
+		eventID,
+	)
 	if err != nil {
 		return err
 	}
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
@@ -112,7 +224,14 @@ func (m *AttendeeModel) Delete(userId, eventId int) error {
 	return nil
 }
 
-func (m *AttendeeModel) GetEventsByAttendee(attendeeId int) ([]*Event, error) {
+func (m *AttendeeModel) GetEventsByAttendee(
+	ctx context.Context,
+	tenantID int,
+	attendeeID int,
+) ([]*Event, error) {
+	if tenantID <= 0 || attendeeID <= 0 {
+		return nil, ErrInvalidEventScope
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -128,49 +247,40 @@ func (m *AttendeeModel) GetEventsByAttendee(attendeeId int) ([]*Event, error) {
 			e.end_date_time,
 			e.category_id,
 			e.url,
-			u.id,
-			u.name
-		FROM events e
-		JOIN attendees a ON e.id = a.event_id
-		JOIN users u ON e.owner_id = u.id
-		WHERE a.user_id = ?
+			COALESCE(u.name, '')
+		FROM attendees a
+		JOIN events e
+			ON e.tenant_id = a.tenant_id
+			AND e.id = a.event_id
+		JOIN users u
+			ON u.tenant_id = e.tenant_id
+			AND u.id = e.owner_id
+		WHERE a.tenant_id = ?
+		  AND a.user_id = ?
+		ORDER BY e.start_date_time ASC
 	`
 
-	rows, err := m.DB.QueryContext(ctx, query, attendeeId)
+	rows, err := m.DB.QueryContext(ctx, query, tenantID, attendeeID)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
-	var events []*Event
+	events := make([]*Event, 0)
 
 	for rows.Next() {
-
-		var event Event
-		var owner Owner
-
-		err := rows.Scan(
-			&event.Id,
-			&event.OwnerId,
-			&event.Title,
-			&event.Description,
-			&event.ImageUrl,
-			&event.Location,
-			&event.StartDateTime,
-			&event.EndDateTime,
-			&event.CategoryId,
-			&event.Url,
-			&owner.Id,
-			&owner.Name,
-		)
+		event, err := scanEvent(rows)
 		if err != nil {
 			return nil, err
 		}
-		event.Owner = &owner
-		events = append(events, &event)
+
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return events, nil
-
 }
