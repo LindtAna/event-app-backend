@@ -10,10 +10,16 @@ import (
 	"time"
 )
 
-var ErrInvalidCategory = errors.New("invalid or missing category")
+var (
+	ErrInvalidCategory   = errors.New("invalid or missing category")
+	ErrInvalidEventScope = errors.New("invalid tenant or owner context")
+)
 
 // erstellt ein Event und löst dessen Kategorie innerhalb derselben Transaktion auf
-func (m *EventModel) CreateWithCategory(ctx context.Context, event *Event) error {
+func (m *EventModel) CreateWithCategory(ctx context.Context, tenantID int, event *Event) error {
+	if tenantID <= 0 || event == nil || event.OwnerId <= 0 {
+		return ErrInvalidEventScope
+	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -23,22 +29,23 @@ func (m *EventModel) CreateWithCategory(ctx context.Context, event *Event) error
 	}
 	defer tx.Rollback()
 
-	categoryID, err := resolveCategory(ctx, tx, event)
+	categoryID, err := resolveCategory(ctx, tx, tenantID, event)
 	if err != nil {
 		return err
 	}
 
 	query := `
 	INSERT INTO events (
-		owner_id, title, description, image_url, location,
+		tenant_id,owner_id, title, description, image_url, location,
 		start_date_time, end_date_time, category_id, url
 	)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 	result, err := tx.ExecContext(
 		ctx,
 		query,
+		tenantID,
 		event.OwnerId,
 		event.Title,
 		event.Description,
@@ -72,7 +79,12 @@ func (m *EventModel) CreateWithCategory(ctx context.Context, event *Event) error
 
 // Aktualisiert ein Event und löst dessen Kategorie innerhalb derselben Transaktion auf
 // Eine ungenutzte benutzerdefinierte Kategorie wird entfernt
-func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error {
+func (m *EventModel) UpdateWithCategory(
+	ctx context.Context, tenantID int,
+	ownerID int, event *Event) error {
+	if tenantID <= 0 || ownerID <= 0 || event == nil || event.Id <= 0 {
+		return ErrInvalidEventScope
+	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -83,17 +95,20 @@ func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error
 	defer tx.Rollback()
 
 	var oldCategoryID string
+
 	err = tx.QueryRowContext(
 		ctx,
-		`SELECT category_id FROM events WHERE id = ?`,
+		`SELECT category_id FROM events
+		WHERE id = ? AND tenant_id = ? AND owner_id = ?`,
 		event.Id,
+		tenantID,
+		ownerID,
 	).Scan(&oldCategoryID)
-
 	if err != nil {
 		return err
 	}
 
-	newCategoryID, err := resolveCategory(ctx, tx, event)
+	newCategoryID, err := resolveCategory(ctx, tx, tenantID, event)
 	if err != nil {
 		return err
 	}
@@ -102,7 +117,7 @@ func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error
 	UPDATE events
 	SET title = ?, description = ?, image_url = ?, location = ?,
 	    start_date_time = ?, end_date_time = ?, category_id = ?, url = ?
-	WHERE id = ?
+	WHERE id = ? AND tenant_id = ? AND owner_id = ?
 `
 
 	result, err := tx.ExecContext(
@@ -117,6 +132,8 @@ func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error
 		newCategoryID,
 		event.Url,
 		event.Id,
+		tenantID,
+		ownerID,
 	)
 	if err != nil {
 		return err
@@ -131,7 +148,7 @@ func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error
 	}
 
 	if oldCategoryID != newCategoryID {
-		if err := deleteUnusedCustomCategory(ctx, tx, oldCategoryID); err != nil {
+		if err := deleteUnusedCustomCategory(ctx, tx, tenantID, oldCategoryID); err != nil {
 			return err
 		}
 	}
@@ -140,6 +157,7 @@ func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error
 		return err
 	}
 
+	event.OwnerId = ownerID
 	event.CategoryId = newCategoryID
 	event.CategoryName = ""
 
@@ -151,8 +169,13 @@ func (m *EventModel) UpdateWithCategory(ctx context.Context, event *Event) error
 // falls kein anderes Event diese Kategorie verwendet
 func (m *EventModel) DeleteWithCategory(
 	ctx context.Context,
-	id int,
+	tenantID int,
+	ownerID int,
+	eventID int,
 ) error {
+	if tenantID <= 0 || ownerID <= 0 || eventID <= 0 {
+		return ErrInvalidEventScope
+	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -163,10 +186,14 @@ func (m *EventModel) DeleteWithCategory(
 	defer tx.Rollback()
 
 	var categoryID string
+
 	err = tx.QueryRowContext(
 		ctx,
-		`SELECT category_id FROM events WHERE id = ?`,
-		id,
+		`SELECT category_id FROM events
+		WHERE id = ? AND tenant_id = ? AND owner_id = ?`,
+		eventID,
+		tenantID,
+		ownerID,
 	).Scan(&categoryID)
 
 	if err != nil {
@@ -175,8 +202,11 @@ func (m *EventModel) DeleteWithCategory(
 
 	result, err := tx.ExecContext(
 		ctx,
-		`DELETE FROM events WHERE id = ?`,
-		id,
+		`DELETE FROM events
+		WHERE id = ? AND tenant_id = ? AND owner_id = ?`,
+		eventID,
+		tenantID,
+		ownerID,
 	)
 	if err != nil {
 		return err
@@ -190,7 +220,7 @@ func (m *EventModel) DeleteWithCategory(
 		return sql.ErrNoRows
 	}
 
-	if err := deleteUnusedCustomCategory(ctx, tx, categoryID); err != nil {
+	if err := deleteUnusedCustomCategory(ctx, tx, tenantID, categoryID); err != nil {
 		return err
 	}
 
@@ -198,14 +228,24 @@ func (m *EventModel) DeleteWithCategory(
 
 }
 
-// Gibt eine vorhandene Kategorie-ID zurück oder erstellt eine benutzerdefinierte Kategorie
+// normalizeCategoryName vereinheitlicht Leerzeichen und Groß-/Kleinschreibung.
+func normalizeCategoryName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
+// Gibt eine vorhandene Kategorie des Tenants zurück
+// oder erstellt eine benutzerdefinierte Kategorie für diesen Tenant
 // CategoryId || CategoryName, nicht beides
 func resolveCategory(
 	ctx context.Context,
 	tx *sql.Tx,
+	tenantID int,
 	event *Event,
 ) (string, error) {
-	categoryName := strings.TrimSpace(event.CategoryName)
+	if tenantID <= 0 || event == nil {
+		return "", ErrInvalidEventScope
+	}
+	categoryName := strings.Join(strings.Fields(event.CategoryName), " ")
 	categoryID := strings.TrimSpace(event.CategoryId)
 
 	if categoryName != "" && categoryID != "" {
@@ -213,12 +253,16 @@ func resolveCategory(
 	}
 
 	if categoryName != "" {
+		nameKey := normalizeCategoryName(categoryName)
+
 		var existingID string
 
 		err := tx.QueryRowContext(
 			ctx,
-			`SELECT id FROM categories WHERE name = ?`,
-			categoryName,
+			`SELECT id FROM categories
+			WHERE tenant_id = ? AND name_key = ?`,
+			tenantID,
+			nameKey,
 		).Scan(&existingID)
 
 		if err == nil {
@@ -236,9 +280,11 @@ func resolveCategory(
 
 		_, err = tx.ExecContext(
 			ctx,
-			`INSERT INTO categories (id, name, is_default) VALUES (?, ?, 0)`,
+			`INSERT INTO categories (tenant_id, id, name, name_key, is_default) VALUES (?, ?, ?, ?, 0)`,
+			tenantID,
 			newID,
 			categoryName,
+			nameKey,
 		)
 		if err != nil {
 			return "", err
@@ -254,7 +300,9 @@ func resolveCategory(
 	var existingID string
 	err := tx.QueryRowContext(
 		ctx,
-		`SELECT id FROM categories WHERE id = ?`,
+		`SELECT id FROM categories
+		WHERE tenant_id = ? AND id = ?`,
+		tenantID,
 		categoryID,
 	).Scan(&existingID)
 
@@ -273,13 +321,19 @@ func resolveCategory(
 func deleteUnusedCustomCategory(
 	ctx context.Context,
 	tx *sql.Tx,
+	tenantID int,
 	categoryID string,
 ) error {
 
 	_, err := tx.ExecContext(
 		ctx,
-		`DELETE FROM categories WHERE id = ? AND is_default = 0 AND NOT EXISTS ( SELECT 1 FROM events WHERE category_id = ? )`,
+		`DELETE FROM categories
+		WHERE tenant_id = ? AND id = ? AND is_default = 0
+		AND NOT EXISTS ( SELECT 1 FROM events
+		WHERE tenant_id = ? AND category_id = ? )`,
+		tenantID,
 		categoryID,
+		tenantID,
 		categoryID,
 	)
 

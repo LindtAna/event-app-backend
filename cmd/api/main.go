@@ -26,11 +26,24 @@ type application struct {
 }
 
 func main() {
-	db, err := sql.Open("sqlite", "./data.db")
-
+	// db, err := sql.Open("sqlite", "./data.db")
+	db, err := sql.Open(
+		"sqlite",
+		"file:./data.db?_pragma=foreign_keys(1)",
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		log.Fatal(err)
+	}
+
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	defer db.Close()
 
