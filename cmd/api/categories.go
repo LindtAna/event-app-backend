@@ -6,6 +6,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// getAllCategories listet Kategorien des aktiven Tenants auf.
+//
+// @Summary Listet Kategorien des authentifizierten Tenants auf
+// @Tags categories
+// @Produce json
+// @Success 200 {array} database.Category
+// @Router /api/v1/categories [get]
+// @Security BearerAuth
 func (app *application) getAllCategories(c *gin.Context) {
 	_, tenantID, ok := eventRequestScope(c)
 	if !ok {

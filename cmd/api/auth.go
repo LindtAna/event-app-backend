@@ -372,6 +372,15 @@ func (app *application) registerUser(c *gin.Context) {
 }
 
 // updateProfile aktualisiert das Profil des angemeldeten Benutzers.
+//
+// @Summary Aktualisiert das Profil des angemeldeten Benutzers
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param profile body updateProfileRequest true "Profildaten"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/users/profile [put]
+// @Security BearerAuth
 func (app *application) updateProfile(c *gin.Context) {
 	userValue, exists := c.Get("user")
 	authUser, ok := userValue.(*database.User)
@@ -558,7 +567,13 @@ func (app *application) login(c *gin.Context) {
 	})
 }
 
-// refreshToken erstellt einen neuen Access-Token anhand des Refresh-Cookies
+// refreshToken erstellt einen neuen Access-Token anhand des Refresh-Cookies.
+//
+// @Summary Erneuert den Access-Token
+// @Tags auth
+// @Produce json
+// @Success 200 {object} authResponse
+// @Router /api/v1/auth/refresh [post]
 func (app *application) refreshToken(c *gin.Context) {
 	cookie, err := c.Cookie("refreshToken")
 	if err != nil || strings.TrimSpace(cookie) == "" {
@@ -628,7 +643,13 @@ func (app *application) refreshToken(c *gin.Context) {
 	})
 }
 
-// logout entfernt das Refresh-Cookie aus dem Browser
+// logout entfernt das Refresh-Cookie aus dem Browser.
+//
+// @Summary Meldet den Benutzer ab
+// @Tags auth
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Router /api/v1/auth/logout [post]
 func (app *application) logout(c *gin.Context) {
 	app.clearRefreshTokenCookie(c)
 

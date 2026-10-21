@@ -9,21 +9,22 @@
 
 ## Über das Projekt
 Das EventApp Backend ist eine RESTful API, die mit Go (Golang) und dem Gin-Framework entwickelt wurde.
-Sie dient als Grundlage für eine Event-Management-Plattform.
-Benutzer können sich registrieren und anmelden, ihr Profil bearbeiten, Events erstellen und verwalten sowie sich als Teilnehmer für Events ein- und austragen.
+Sie dient als Grundlage für eine Event-Management-Plattform mit Mandantenfähigkeit (Multi-Tenancy).
+Benutzer, Events, Kategorien und Teilnahmen sind jeweils einem Tenant (Unternehmen/Organisation) zugeordnet; geschützte Routen und Datenbankabfragen arbeiten streng tenantbezogen.
 
-Events verfügen über einen Ersteller, Veranstaltungsdaten und eine Kategorie. Neben fest vorgegebenen Systemkategorien unterstützt die API benutzerdefinierte Kategorien. Die API stellt außerdem Endpunkte zum Abrufen der Event-Teilnehmer und der Events eines Teilnehmers bereit.
+Benutzer können sich als Tenant-Owner (mit Firmennamen) oder als Member (per Einladungscode) registrieren, ihr Profil bearbeiten, Events im eigenen Tenant verwalten sowie Teilnehmer koordinieren.
 
 ---
 
 ## Features
-- **Benutzerverwaltung:** Registrierung, Login und Aktualisierung des Benutzerprofils
-- **Token-basierte Authentifizierung:** Kurzlebiger Access Token und Refresh Token in einem HttpOnly-Cookie.
-- **Event-Management:** CRUD-Operationen (Erstellen, Lesen, Aktualisieren, Löschen) für Events; öffentliche Filterung nach Ersteller-ID.
-- **Teilnehmer-Management:** Benutzer können sich für Events anmelden und wieder abmelden; Abfrage von Teilnehmern pro Event.
-- **Zugriffskontrolle:** Nur der Ersteller darf sein Event ändern oder löschen. Benutzer können sich selbst anmelden oder abmelden.
+- **Mandantenfähigkeit (Multi-Tenancy):** Vollständige Isolierung von Daten pro Tenant (`tenants`-Struktur).
+- **Erweiterte Benutzerverwaltung:** Registrierung als `owner` (erstellt Tenant + Admin) oder `member` (über Einladungscode). Aktualisierung des Benutzerprofils.
+- **Token-basierte Authentifizierung:** Kurzlebiger Access Token (15 Min.) und Refresh Token (7 Tage) in einem HttpOnly-Cookie (mit adaptiven SameSite/Secure-Attributen).
+- **Event-Management:** CRUD-Operationen für Events innerhalb des eigenen Tenants; Filterung nach Ersteller-ID.
+- **Teilnehmer-Management:** Benutzer können sich für Events anmelden und wieder abmelden; Abfrage von Teilnehmern pro Event mit tenantweiter Eindeutigkeitsprüfung..
+- **Zugriffskontrolle & Rollen:** Tenantbezogene Rechte (Owner vs. Member). Nur der Ersteller oder Tenant-Admin darf Events verwalten.
 - **API-Dokumentation:** Automatisch generierte und interaktive Swagger-UI.
-- **CORS-Support:** Middleware zur Verarbeitung von Cross-Origin-Anfragen.
+- **Striktes CORS-Management:** Middleware zur sicheren Verarbeitung von Cross-Origin-Anfragen basierend auf erlaubten `CLIENT_ORIGIN`-Werten.
 
 ---
 
@@ -42,29 +43,32 @@ Events verfügen über einen Ersteller, Veranstaltungsdaten und eine Kategorie. 
 .
 ├─ cmd
 │  ├── api
-│  │   ├── main.go       # Einstiegspunkt der Applikation
-│  │   ├── server.go     # HTTP-Server Konfiguration
-│  │   ├── routes.go     # Definition der API-Endpunkte
-│  │   ├── middleware.go    # JWT-Authentifizierung und CORS
-│  │   ├── auth.go          # Registrierung, Login, Tokens und Profil
-│  │   ├── events.go     # Event- und Teilnehmer-Handler
-│  │   ├── categories.go # HTTP-Handler zum Abrufen aller Kategorien
-│  │   └── context.go    # Helper zum Extrahieren des authentifiziert.Benutzers
+│  │   ├── main.go          # Einstiegspunkt der Applikation
+│  │   ├── server.go        # HTTP-Server Konfiguration
+│  │   ├── routes.go        # Definition der API-Endpunkte
+│  │   ├── middleware.go    # JWT-Authentifizierung, Tenant-Prüfung und CORS
+│  │   ├── auth.go          # Registrierung (Owner/Member), Login, Tokens und Profil
+│  │   ├── events.go        # Event- und Teilnehmer-Handler
+│  │   ├── categories.go    # HTTP-Handler zum Abrufen der Tenant-Kategorien
+│  │   └── context.go       # Helper zum Extrahieren des authentifizierten Benutzers/Tenants
 │  └── migrate
 │       └── migrations
-│           ├── 000001_create_users_table.up.sql
-│           ├── 000004_create_categories_table.up.sql
-│           ├── 000004_create_categories_table.up.sql
-│           └── ..usw
+│           ├── 000001_create_tenants_table.down.sql
+│           ├── 000001_create_tenants_table.up.sql
+│           ├── 000002_create_users_table.down.sql
+│           ├── ...
+│           └── 000006_create_invitations_table.up.sql
 │ 
 ├── internal
-│   ├── database          # Datenbankverbindung und Model
-│   │   ├── attendees.go         # Datenbankzugriffe für Event-Teilnehmer(CRUD & M:N Verknüpfungen)
-│   │   ├── events.go            # Event-Modell, Struct-Validierung, CRUD-Datenbankoperationen für Events
+│   ├── database          # Datenbankverbindung und Models
+│   │   ├── tenants.go           # Tenant-Modell
+│   │   ├── attendees.go         # Datenbankzugriffe für Event-Teilnehmer (Tenant-geprüft)
+│   │   ├── events.go            # Event-Modell, Validierung, CRUD-Operationen
 │   │   ├── models.go            # Zusammenfassung der Datenbankmodelle
-│   │   ├── categories.go        # Category-Modell und Datenbankabfrage aller Kategorien
-│   │   ├── event_categories.go  # Transaktionsbasierte Event-/Kategorie-Logik
-│   │   └── users.go             # User-Modell und Profilzugriffe
+│   │   ├── categories.go        # Tenantbezogene Kategorie-Modelle
+│   │   ├── event_categories.go  # Transaktionsbasierte Kategorie-Logik
+│   │   └── invitations.go       # Einladungen-Modell
+│   │   └── users.go             # User-Modell
 │   └── env                      # Hilfsfunktionen für Umgebungsvariablen
 │       └── env.go
 ├── docs                  # Automatisch generierte Swagger-Dateien
@@ -72,24 +76,29 @@ Events verfügen über einen Ersteller, Veranstaltungsdaten und eine Kategorie. 
 ├── go.sum
 └── README.md
 ```
-Die Dateien zur Kategorienfunktion haben unterschiedliche Aufgaben:
-- `cmd/api/categories.go` enthält den Gin-HTTP-Handler `getAllCategories`. Er ruft `app.models.Categories.GetAll(...)` auf und gibt die Kategorien als JSON mit Status `200 OK` zurück; bei einem Fehler antwortet er mit `500 Internal Server Error`.
-
-- `internal/database/categories.go` enthält das Datenmodell `Category`, `CategoryModel` und die Datenbankabfrage `GetAll`. Die Kategorien werden nach `is_default` (Systemkategorien zuerst) und anschließend nach Namen sortiert.
-
-- `internal/database/event_categories.go` enthält die separate Geschäfts- und Datenbanklogik zum Auflösen, Erstellen und Bereinigen von Kategorien innerhalb von Transaktionen, wenn Events erstellt, aktualisiert oder gelöscht werden.
 ---
 
-##  Umgebungsvariablen
+## Umgebungsvariablen & Lokaler Start
 #### `/EventApp/.env`
 
 ```env
 PORT=8080
-JWT_SECRET=dein-sehr-geheimes-jwt-secret
+JWT_SECRET=dein-sehr-geheimes-jwt-secret-mit-mindestens-32-bytes
 CLIENT_ORIGIN=http://localhost:5173
 ```
 - `PORT` legt den HTTP-Port fest
-- `JWT_SECRET` wird zum Signieren und Prüfen der JWTs verwendet. Für eine reale Bereitstellung muss ein ausreichend zufälliger, geheimer Wert gesetzt werden
+- `JWT_SECRET` muss mindestens 32 Bytes lang sein (die Anwendung bricht andernfalls beim Start ab)
+- `CLIENT_ORIGIN` definiert die erlaubte(n) Frontend-Origin(s)
+
+---
+## Ausführen der Migrationen
+Vor dem Start müssen die Datenbankmigrationen ausgeführt werden. Die SQLite-Datei data.db wird dabei im Root-Verzeichnis angelegt.
+
+```
+go run ./cmd/migrate up
+go run ./cmd/api
+```
+(Migrationen lassen sich bei Bedarf mit go run ./cmd/migrate down zurücksetzen).
 ---
 
 ## API-Dokumentation
@@ -106,112 +115,110 @@ Die im Router registrierten API-Routen verwenden das Präfix `/api/v1`.
 
 | Methode | Endpunkt | Authentifizierung | Beschreibung |
 |---|---|---|---|
-| `POST` | `/api/v1/auth/register` | Öffentlich | Benutzerkonto erstellen |
-| `POST` | `/api/v1/auth/login` | Öffentlich | Anmelden; Access Token und Benutzerobjekt zurückgeben, Refresh Token als Cookie setzen |
-| `POST` | `/api/v1/auth/refresh` | Refresh-Cookie | Neuen Access Token aus dem Refresh Token ausstellen |
-| `POST` | `/api/v1/auth/logout` | Öffentlich; Cookie wird gelöscht | Refresh-Cookie entfernen |
-| `PUT` | `/api/v1/users/profile` | Bearer Access Token | Name, Bio und Avatar-URL des angemeldeten Benutzers aktualisieren |
+| `POST` | `/api/v1/auth/register` | Öffentlich | Tenant-Owner oder Tenant-Member registrieren|
+| `POST` | `/api/v1/auth/login` | Öffentlich | Anmelden; Access Token zurückgeben, Refresh-Cookie setzen |
+| `POST` | `/api/v1/auth/refresh` | Refresh-Cookie | Neuen Access Token ausstellen |
+| `POST` | `/api/v1/auth/logout` | Öffentlich | Refresh-Cookie löschen |
+| `PUT` | `/api/v1/users/profile` | Bearer Access Token | Name, Bio und Avatar-URL des eigenen Profils aktualisieren |
 
-Bei der Registrierung werden `email`, `password` und `name` erwartet. Die E-Mail muss gültig sein; das Passwort muss mindestens acht Zeichen lang sein. Bei der Profilaktualisierung ist der Name erforderlich und muss mindestens zwei Zeichen lang sein. `bio` und `avatarUrl` sind optionale Textfelder.
+#### Registrierungs-Modi (registrationType):
+- `owner`: Erstellt einen neuen Tenant und den Administrator. Erfordert companyName, email, password, name
+- `member`: Tritt einem bestehenden Tenant bei. Erfordert invitationCode, email, password, name
+- Passwörter müssen zwischen 8 und 72 Zeichen lang sein. E-Mail-Adressen und Firmennamen müssen eindeutig sein
 
-#### Events
+#### Events(Tenant-geschützt)
 
 | Methode | Endpunkt | Authentifizierung | Beschreibung |
 |---|---|---|---|
-| `GET` | `/api/v1/events` | Öffentlich | Alle Events abrufen; optionaler Filter `?ownerId=<id>` |
-| `GET` | `/api/v1/events/:id` | Öffentlich | Einzelnes Event abrufen |
-| `POST` | `/api/v1/events` | Bearer Access Token | Event erstellen; der angemeldete Benutzer wird als Ersteller gesetzt |
+| `GET` | `/api/v1/events` | Bearer Access Token | Alle Events des eigenen Tenants abrufen; optionaler Filter ?ownerId=<id> |
+| `GET` | `/api/v1/events/:id` | Bearer Access Token | Einzelnes Tenant-Event abrufen |
+| `POST` | `/api/v1/events` | Bearer Access Token | Event im eigenen Tenant erstellen |
 | `PUT` | `/api/v1/events/:id` | Bearer Access Token | Eigenes Event aktualisieren |
 | `DELETE` | `/api/v1/events/:id` | Bearer Access Token | Eigenes Event löschen; erfolgreiche Antwort ist `204 No Content` |
 
 Der Parameter `ownerId` muss eine gültige Ganzzahl sein; andernfalls antwortet die API mit `400 Bad Request`. Beim Aktualisieren und Löschen muss der angemeldete Benutzer der Ersteller des Events sein.
 
-Ein Event verwendet im API-Modell diese Felder:
+Validierungen im Event-Modell: title (3–100 Zeichen), description (3–400), location (3–200), Start- und Endzeitpunkt sowie eine Kategorie.
 
-| JSON-Feld | Bedeutung | Validierung im Event-Modell |
-|---|---|---|
-| `id` | Event-ID | Wird vom Backend gesetzt |
-| `ownerId` | ID des Erstellers | Wird beim Erstellen aus dem authentifizierten Benutzer übernommen |
-| `owner` | Objekt mit `id` und `name` des Erstellers | Wird beim Abrufen mitgeladen, sofern ein Ersteller vorhanden ist |
-| `title` | Titel des Events | Erforderlich, 3–100 Zeichen |
-| `description` | Beschreibung | Erforderlich, 3–400 Zeichen |
-| `imageUrl` | Bild-URL | Optional |
-| `location` | Veranstaltungsort | Erforderlich, 3–200 Zeichen |
-| `startDateTime` | Startdatum und -uhrzeit | Erforderlich |
-| `endDateTime` | Enddatum und -uhrzeit | Erforderlich |
-| `categoryId` | ID einer bestehenden Kategorie | Wird bei der Kategorieauflösung geprüft |
-| `categoryName` | Name einer Kategorie, z. B. für eine neue benutzerdefinierte Kategorie | Optional; darf nicht gleichzeitig mit `categoryId` angegeben werden |
-| `url` | Weiterführender Link | Optional |
-
-Für `categoryId` und `categoryName` gilt: Bei Event-Erstellung und -Aktualisierung muss genau eine der beiden Angaben verwendet werden. Eine nicht vorhandene `categoryId` oder eine fehlende/ungültige Kategorie führt zu `400 Bad Request`. Die Datenbanklogik speichert die Kategorie-ID am Event.
-
-#### Kategorien
+#### Kategorien(Tenant-geschützt)
 
 | Methode | Endpunkt | Authentifizierung | Beschreibung |
 |---|---|---|---|
-| `GET` | `/api/v1/categories` | Öffentlich | Alle System- und benutzerdefinierten Kategorien abrufen |
+| `GET` | `/api/v1/categories` | Bearer Access Token | Alle System- und benutzerdefinierten Kategorien des Tenants abrufen |
 
-Die Kategorien werden in der separaten Tabelle `categories` gespeichert. Die Systemkategorien stehen in der Antwort vor den benutzerdefinierten Kategorien; innerhalb der jeweiligen Gruppe wird alphabetisch ohne Beachtung der Groß-/Kleinschreibung sortiert.
+Jeder Tenant verfügt über Standardkategorien (Meeting, Workshop, Team-Event, Planning, UI&UX, Konferenz, Weiterbildung, Product Launch) sowie optional benutzerdefinierte Kategorien, die dynamisch beim Erstellen/Aktualisieren von Events verwaltet und bei Nicht-mehr-Verwendung bereinigt werden.
 
-Folgende Systemkategorien werden durch die Migration angelegt und nicht automatisch gelöscht:
-
-- Meeting
-- Workshop
-- Team-Event
-- Planning
-- UI&UX
-- Konferenz
-- Weiterbildung
-- Product Launch
-
-Beim Erstellen oder Aktualisieren eines Events kann eine vorhandene `categoryId` oder ein `categoryName` angegeben werden. Bei einem neuen Namen legt das Backend eine benutzerdefinierte Kategorie an. Die Namen sind in der Datenbank ohne Beachtung der Groß-/Kleinschreibung eindeutig. Wenn ein Event seine Kategorie wechselt oder gelöscht wird, entfernt das Backend eine benutzerdefinierte Kategorie, sobald kein Event mehr auf sie verweist. Systemkategorien bleiben bestehen.
-
-Die Kategorieauflösung und die zugehörige Event-Änderung werden jeweils innerhalb derselben Datenbanktransaktion ausgeführt.
-
-#### Teilnehmer
+#### Teilnehmer(Tenant-geschützt)
 
 | Methode | Endpunkt | Authentifizierung | Beschreibung |
 |---|---|---|---|
-| `GET` | `/api/v1/events/:id/attendees` | Öffentlich | Teilnehmer eines Events abrufen |
-| `GET` | `/api/v1/attendees/:id/events` | Öffentlich | Events abrufen, für die der Benutzer als Teilnehmer eingetragen ist |
+| `GET` | `/api/v1/events/:id/attendees` | Bearer Access Token | Teilnehmer eines Tenant-Events abrufen |
+| `GET` | `/api/v1/attendees/:id/events` | Bearer Access Token | Events abrufen, für die der Benutzer als Teilnehmer eingetragen ist |
 | `POST` | `/api/v1/events/:id/attendees/:userId` | Bearer Access Token | Teilnehmer eintragen |
 | `DELETE` | `/api/v1/events/:id/attendees/:userId` | Bearer Access Token | Teilnehmer austragen |
 
-Beim Eintragen müssen das Event und der Zielbenutzer existieren. Bereits vorhandene Teilnahmen werden mit `409 Conflict` abgewiesen. Ein Benutzer darf sich selbst eintragen; der Ersteller des Events darf auch einen anderen Benutzer eintragen. Beim Austragen darf der angemeldete Benutzer seine eigene Teilnahme beenden oder als Ersteller einen Teilnehmer entfernen.
+Beim Eintragen müssen das Event und der Zielbenutzer existieren. Bereits vorhandene Teilnahmen werden mit `409 Conflict` abgewiesen. Ein Benutzer darf sich selbst eintragen.
 
-Die Teilnehmerliste liefert Benutzerinformationen aus den Feldern `id`, `name` und `email`. Das Passwort wird nicht in JSON-Antworten serialisiert.
-
+Die Teilnehmerliste liefert Benutzerinformationen aus den Feldern `id` und `name`.
 
 ---
 
 ## Datenbank-Schema
 
-Die SQLite-Datenbank wird durch die Migrationen `000001` bis `000004` strukturiert. Die Migrationen definieren die Tabellen `users`, `events`, `attendees` und `categories` einschließlich der unten aufgeführten Datentypen, Standardwerte und Constraints.
+Die SQLite-Datenbank wird durch die Migrationen `000001` bis `000006` strukturiert. Die Migrationen definieren die Tabellen `tenants`,`users`,`invitations`, `events`, `attendees` und `categories` einschließlich der unten aufgeführten Datentypen, Standardwerte und Constraints.
+
+### `tenants`
+| Feld | Typ | Eigenschaften / Zweck |
+|---|---|---|
+| `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`)|
+| `name` | `TEXT` | `NOT NULL`; Name des Unternehmens / der Organisation|
+| `name_key` | `TEXT` | `NOT NULL`, `UNIQUE`; Normalisierter Name für eindeutige Prüfung|
+| `slug` | `TEXT` | `NOT NULL`, `UNIQUE`; URL-freundlicher Bezeichner|
+| `status` | `TEXT` | `NOT NULL`, Standardwert 'active', CHECK (status IN ('active', 'suspended'))|
+| `created_at` | `TEXT` | `NOT NULL`, Standardwert 'CURRENT_TIMESTAMP'|
 
 ### `users`
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
-| `email` | `TEXT` | `NOT NULL`, `UNIQUE`; E-Mail-Adresse für den Login |
+| `tenant_id` | `INTEGER` | `NOT NULL`; Fremdschlüssel auf tenants(id) mit ON `DELETE CASCADE`|
+| `email` | `TEXT` | `NOT NULL`, `UNIQUE`, `COLLATE NOCASE`; E-Mail-Adresse für den Login|
 | `name` | `TEXT` | `NOT NULL`; Anzeigename |
-| `password` | `TEXT` | `NOT NULL`; enthält den bcrypt-Hash des Passworts |
-| `bio` | `TEXT` | Standardwert `''`; Profilbeschreibung. Die Migration setzt für dieses Feld kein `NOT NULL`. |
-| `avatar_url` | `TEXT` | Standardwert `''`; Avatar-URL. Die Migration setzt für dieses Feld kein `NOT NULL`. |
+| `password_hash` | `TEXT` | `NOT NULL`; enthält den bcrypt-Hash des Passworts |
+| `bio` | `TEXT` | Standardwert `''`; Profilbeschreibung(kein `NOT NULL`-Constraint)|
+| `avatar_url` | `TEXT` | Standardwert `''`; Avatar-URL(kein `NOT NULL`-Constraint)|
+| `role` | `TEXT` |  `NOT NULL`; Standardwert 'member', `CHECK` (role `IN` ('owner', 'member'))|
+| `status` | `TEXT` |  `NOT NULL`; Standardwert 'active', `CHECK` (status `IN` ('active', 'disabled'))|
+| `created_at` | `TEXT` |  `NOT NULL`; Standardwert `CURRENT_TIMESTAMP`|
 
-Im Go-Modell ist das Passwort mit `json:"-"` markiert und wird deshalb nicht in JSON-Antworten serialisiert.
+Im Go-Modell ist das Passwort mit json:"-" markiert und wird deshalb nicht in JSON-Antworten serialisiert. Die Kombination aus (tenant_id, id) ist über einen Unique-Constraint abgesichert
+
+### `invitations`
+| Feld | Typ | Eigenschaften / Zweck |
+|---|---|---|
+| `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
+| `tenant_id` | `INTEGER` | `NOT NULL`; Tenant-Zuordnung|
+| `token_hash` | `TEXT` | `NOT NULL`, `UNIQUE`; gehashter Einladungstoken |
+| `expires_at` | `TEXT` | `NOT NULL`; Anzeigename |
+| `password_hash` | `TEXT` | `NOT NULL`; Ablaufzeitpunkt der Einladung |
+| `used_at` | `TEXT` | Optional; Zeitpunkt der Verwendung |
+| `revoked_at` | `TEXT` | Optional; Zeitpunkt des Widerrufs |
+| `created_by` | `INTEGER` |  `NOT NULL`; ID des Erstellers (Verweis auf users)|
+| `created_at` | `TEXT` |  `NOT NULL`; Standardwert `CURRENT_TIMESTAMP`|
 
 ### `events`
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
-| `owner_id` | `INTEGER` | `NOT NULL`; Ersteller des Events; Fremdschlüssel auf `users(id)` mit `ON DELETE CASCADE` |
-| `title` | `TEXT` | `NOT NULL`; Titel des Events |
-| `description` | `TEXT` | `NOT NULL`; Beschreibung |
+| `tenant_id` | `INTEGER` | `NOT NULL`; Tenant-Zuordnung |
+| `owner_id` | `INTEGER` | `NOT NULL`; Ersteller des Events (Verweis auf users)|
+| `title` | `TEXT` | `NOT NULL`; Titel des Events (3–100 Zeichen)|
+| `description` | `TEXT` | `NOT NULL`; Beschreibung (3–400 Zeichen)|
 | `image_url` | `TEXT` | Standardwert `''`; URL des Event-Bildes |
-| `location` | `TEXT` | `NOT NULL`; Veranstaltungsort |
+| `location` | `TEXT` | `NOT NULL`; Veranstaltungsort (3–200 Zeichen)|
 | `start_date_time` | `TEXT` | `NOT NULL`; Beginn des Events |
 | `end_date_time` | `TEXT` | `NOT NULL`; Ende des Events |
-| `category_id` | `TEXT` | Standardwert `''`; ID der zugeordneten Kategorie |
+| `category_id` | `TEXT` | `NOT NULL`; ID der zugeordneten Kategorie |
 | `url` | `TEXT` | Standardwert `''`; weiterführender Link |
 
 Die Migration deklariert einen Fremdschlüssel von `owner_id` auf `users.id`. 
@@ -221,29 +228,32 @@ Die Kategorie wird stattdessen in der Anwendung durch `resolveCategory` validier
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
-| `user_id` | `INTEGER` | `NOT NULL`; Fremdschlüssel auf `users(id)` mit `ON DELETE CASCADE` |
-| `event_id` | `INTEGER` | `NOT NULL`; Fremdschlüssel auf `events(id)` mit `ON DELETE CASCADE` |
+| `tenant_id` | `INTEGER` | `NOT NULL`;Tenant-Zuordnung |
+| `user_id` | `INTEGER` | `NOT NULL`; verknüpfter Benutzer|
+| `event_id` | `INTEGER` | `NOT NULL`; verknüpftes Event |
+| `created_at` | `TEXT` | `NOT NULL`; Standardwert `CURRENT_TIMESTAMP` |
 
-Die Migration definiert Fremdschlüssel auf `users` und `events`, aber **keinen zusammengesetzten Unique-Constraint** für `(user_id, event_id)`. 
-Die API prüft vor dem Eintragen, ob die Teilnahme bereits existiert.
+Unique-Constraint: UNIQUE (tenant_id, event_id, user_id) verhindert doppelte Anmeldungen desselben Benutzers zum selben Event innerhalb desselben Tenants direkt auf DB-Ebene
 
 ### `categories`
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
-| `id` | `TEXT` | Primärschlüssel (`PRIMARY KEY`); Systemkategorien verwenden feste IDs, benutzerdefinierte Kategorien zufällig erzeugte hexadezimale IDs |
-| `name` | `TEXT` | `NOT NULL`, `UNIQUE`, `COLLATE NOCASE`; Kategorienamen sind ohne Beachtung der Groß-/Kleinschreibung eindeutig |
-| `is_default` | `INTEGER` | `NOT NULL`, Standardwert `0`; `CHECK (is_default IN (0, 1))` begrenzt den Wert auf `0` oder `1` und kennzeichnet Systemkategorien |
+| `tenant_id` | `TEXT` | `NOT NULL`; Fremdschlüssel auf tenants(id) mit `ON DELETE CASCADE`|
+| `id` | `TEXT` | Teil des Primärschlüssels; System- oder generierte Hex-ID|
+| `name` | `TEXT` | `NOT NULL`, Anzeigename der Kategorie|
+| `name_key` | `TEXT` | `NOT NULL`, Eindeutiger Name-Schlüssel pro Tenant|
+| `is_default` | `INTEGER` | `NOT NULL`, Standardwert `0`; `CHECK (is_default IN (0, 1))` (Systemkategorien) |
 
-
-Die Anwendung erstellt, aktualisiert und löscht Events zusammen mit der zugehörigen Kategorienauflösung innerhalb von Datenbanktransaktionen.
-Wenn eine benutzerdefinierte Kategorie von keinem Event mehr verwendet wird, wird sie entfernt; Systemkategorien werden nicht automatisch gelöscht. 
+- Primärschlüssel: Zusammengesetzt aus (tenant_id, id).
+- Constraints: UNIQUE (tenant_id, name_key) stellt sicher, dass Kategorienamen pro Tenant eindeutig sind.
 
 ### Beziehungen und Löschverhalten
 
-- `events.owner_id` verweist auf `users.id`; die Migration deklariert `ON DELETE CASCADE`.
-- `attendees.user_id` verweist auf `users.id` und `attendees.event_id` auf `events.id`; beide Fremdschlüssel deklarieren `ON DELETE CASCADE`.
-- `events.category_id` wird logisch mit `categories.id` verknüpft und durch die Anwendungslogik geprüft, ist in der vorliegenden Migration aber nicht als SQL-Fremdschlüssel definiert
-- Die Tabelle `attendees` besitzt einen eigenen `id`-Primärschlüssel. Die Kombination aus Event und Benutzer wird von der API auf doppelte Einträge geprüft.
+- Multi-Tenant Composite Foreign Keys: Um strikte Tenant-Isolierung zu garantieren, verknüpfen zusammengesetzte Fremdschlüssel (wie `EVENTS(tenant_id, owner_id) -> USERS(tenant_id, id)` und `EVENTS(tenant_id, category_id) -> CATEGORIES(tenant_id, id)`) Datensätze plattformübergreifend an denselben Tenant.
+- Cascade Deletes:
+  - Das Löschen eines Tenants löscht kaskadierend alle zugehörigen Benutzer, Kategorien, Events, Teilnahmen und Einladungen (`ON DELETE CASCADE`)
+  - Das Löschen eines Users oder Events löscht abhängige Teilnahmen und Einladungen ebenfalls automatisch
+- Category Restrict: events_category_same_tenant_fk verwendet ON DELETE RESTRICT, damit Kategorien, die noch von Events verwendet werden, nicht versehentlich gelöscht werden können.
 
 ---
 
@@ -275,77 +285,79 @@ Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Katego
 ```text
                 Frontend / HTTP-Client
                         │
-┌────────────────────── ▼ ────────────────────────────────────────────────────────────────┐
-│                    Gin HTTP-Server                                                      │
-│                  - Gin Logger und Recovery                                              │
-│                 - CORSMiddleware (global; behandelt auch OPTIONS-Preflight)             │
-│                                |                                                        │
-│  ┌──────────────────────────── ▼ ────────────────────────────────────────────────────┐  │
-│  │           ┌─────────────────────────────────────┐                                 │  │
-│  │  ┌─────── ▼ ──────────────────┐        ┌─────── ▼ ─────────────────────────────┐  │  │
-│  │  │ Öffentliche API-Routen     │        │ Geschützte API-Routen                 │  │  │
-│  │  │ Präfix: /api/v1            │        │ Präfix: /api/v1                       │  │  │
-│  │  │                            │        │                                       │  │  │
-│  │  │ Auth                       │        │ AuthMiddleware                        │  │  │
-│  │  │- POST /auth/register       │        │- prüft  Authorization:               │  │  │
-│  │  │- POST /auth/login          │        │  Bearer <accessToken>                 │  │  │
-│  │  │- POST /auth/refresh        │        │- prüft JWT und Benutzer               │  │  │
-│  │  │- POST /auth/logout         │        │                                       │  │  │
-│  │  │                            │        │Benutzerprofil                         │  │  │
-│  │  │ Events                     │        │- PUT /users/profile                   │  │  │
-│  │  │- GET /events               │        │                                       │  │  │
-│  │  │- GET /events/:id           │        │Events                                 │  │  │
-│  │  │                            │        │- POST /events                         │  │  │
-│  │  │Kategorien                  │        │- PUT /events/:id                      │  │  │
-│  │  │- GET /categories           │        │- DELETE /events/:id                   │  │  │
-│  │  │                            │        │                                       │  │  │
-│  │  │Teilnehmer                  │        │Teilnahmeverwaltung                    │  │  │
-│  │  │- GET /events/:id/attendees │        │- POST /events/:id/  attendees/:userId │  │  │
-│  │  │- GET /attendees/:id/events │        │- DELETE /events/:id/attendees/:userId │  │  │
-│  │  └────────────────────────────┘        └───────────────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────────────────────────────┘  │
-│                                       │                                                 │
-│                      ┌─────────────── ▼ ──────────────────┐                             │
-│                      │ HTTP-Handler / Application Methods │                             │
-│                      │           (cmd/api)                │                             │
-│                      └────────────────────────────────────┘                             │
-│                                      │                                                  │
-│               ┌───────────────────── ▼ ──────────────────────┐                          │
-│               │          Datenbankmodelle (Models)           │                          │
-│               │              (internal/database)             │                          │
-│               │    ┌─────────────────────────────────┐       │                          │
-│               │    │         │          │            │       │                          │
-│               │┌───▼──┐  ┌───▼──┐  ┌────▼────┐  ┌────▼─────┐ │                          │
-│               ││ Users│  │Events│  │Attendees│  │Categories│ │                          │
-│               │└──────┘  └──────┘  └─────────┘  └──────────┘ │                          │
-│               │             │                                │                          │
-│               │       ┌─────▼──────────────────────────────┐ │                          │
-│               │       │event_categories.go                 │ │                          │
-│               │       │- Kategorie auflösen                │ │                          │
-│               │       │ - benutzerdefinierte Kategorie     │ │                          │
-│               │       │ transaktional erstellen/bereinigen │ │                          │
-│               │       └────────────────────────────────────┘ │                          │
-│               └──────────────────────────────────────────────┘                          │
-│                                       │                                                 │
-│                        ┌──────────────▼────────────────┐                                │
-│                        │  database/sql + SQLite-Treiber│                                │
-│                        │ (modernc.org/sqlite)          │                                │
-│                        └───────────────────────────────┘                                │
-│                                        │                                                │
-│                        ┌───────────────▼────────────────────┐                           │
-│                        │   SQLite-Datenbank: data.db        │                           │
-│                        │                                    │                           │
-│                        │ Tabellen und wesentliche Felder:   │                           │
-│                        │ - users (id, email, name, password,│                           │
-│                        │   bio, avatar_url)                 │                           │
-│                        │ - events (id, owner_id, title,     │                           │
-│                        │   description,image_url, location, │                           │
-│                        │   start_date_time, end_date_time,  │                           │
-│                        │   category_id, url)                │                           │
-│                        │ - attendees (id, user_id, event_id)│                           │
-│                        │ - categories (id, name, is_default)│                           │
-│                        └────────────────────────────────────┘                           │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────── ▼ ─────────────────────────────────────────────────┐
+│            Gin HTTP-Server                                               │
+│             - Gin Logger und Recovery                                    │
+│            - CORSMiddleware (global; behandelt auch OPTIONS-Preflight)   │
+│                           |                                              │
+│  ┌─────────────────────── ▼ ────────────────────────────────────┐        │
+│  │ AuthMiddleware (Prüft Bearer Access Token & Tenant-Status)   │        │
+│  └──────────────────────────────────────────────────────────────┘        │
+│  ┌────────────────────────│───────────────────────────────────┐          │
+│  │                        │                                   │          │
+│  │  ┌──────────────────── ▼ ─┐        ┌────────────────────── ▼ ──────┐  │
+│  │  │ Öffentliche API-Routen │        │ Geschützte API-Routen         │  │
+│  │  │ Präfix: /api/v1        │        │ Präfix: /api/protected        │  │
+│  │  │                        │        │                               │  │
+│  │  │ Auth                   │        │ Benutzerprofil                │  │
+│  │  │- POST /auth/register   │        │- PUT /users/profile           │  │
+│  │  │(Modus: owner / member) │        │                               │  │
+│  │  │- POST /auth/login      │        │Events                         │  │
+│  │  │- POST /auth/refresh    │        │- GET /events                  │  │
+│  │  │- POST /auth/logout     │        │- GET /events/:id              │  │
+│  │  │                        │        │- POST /events                 │  │
+│  │  │                        │        │- PUT /events/:id              │  │
+│  │  │                        │        │- DELETE /events/:id           │  │
+│  │  │                        │        │                               │  │
+│  │  │                        │        │Kategorien                     │  │
+│  │  │                        │        │- GET /categories              │  │
+│  │  │                        │        │                               │  │
+│  │  │                        │        │Teilnahmeverwaltung            │  │
+│  │  │                        │        │- GET /events/:id/attendees    │  │
+│  │  │                        │        │- GET /attendees/:id/events    │  │
+│  │  │                        │        │- POST /events/:id/attendees   │  │
+│  │  │                        │        │- DELETE /events/:id/attendees │  │
+│  │  └────────────────────────┘        └───────────────────────────────┘  │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│                               │                                          │
+│              ┌─────────────── ▼ ──────────────────┐                      │
+│              │ HTTP-Handler / Application Methods │                      │
+│              │           (cmd/api)                │                      │
+│              └────────────────────────────────────┘                      │
+│                              │                                           │
+│ ┌─────────────────────────── ▼ ────────────────────────────────────────┐ │
+│ │                Datenbankmodelle & Tenant-Logik                       │ │
+│ │                    (internal/database)                               │ │
+│ │     ┌───────────────────────────────────────────────────────┐        │ │
+│ │     │          │        │         │           │             │        │ │
+│ │ ┌───▼────┐ ┌───▼──┐ ┌───▼──┐ ┌────▼────┐ ┌────▼──────┐ ┌────▼─────┐  │ │
+│ │ │Tenants │ │ Users│ │Events│ │Attendees│ │Invitations│ │Categories│  │ │
+│ │ └────────┘ └──────┘ └──────┘ └─────────┘ └───────────┘ └──────────┘  │ │
+│ │                        │                                             │ │
+│ │       ┌────────────────▼───────────────────┐                         │ │
+│ │       │event_categories.go                 │                         │ │
+│ │       │- Tenant-Kategorie auflösen         │                         │ │
+│ │       │- Transaktional erstellen/bereinigen│                         │ │
+│ │       └────────────────────────────────────┘                         │ │
+│ └──────────────────────────────────────────────────────────────────────┘ │
+│                                       │                                   │
+│                        ┌──────────────▼────────────────┐                  │
+│                        │  database/sql + SQLite-Treiber│                  │
+│                        │ (modernc.org/sqlite)          │                  │
+│                        └───────────────────────────────┘                  │
+│                                        │                                  │
+│┌───────────────▼────────────────────────────────────────────────────────┐ │
+││   SQLite-Datenbank: data.db                                            │ │
+││                                                                        │ │
+││ Tenant-gebundene Tabellen:                                             │ │
+││- tenants (id, name, slug, status)                                      │ │
+││- users (id, tenant_id,email, name,password, role, status, ...)         │ │
+││- events (id, tenant_id, owner_id,title, description, category_id,...)  │ │
+││- attendees (id, tenant_id, user_id,event_id, UNIQUE(tenant,event,user))│ │
+││- categories (id, tenant_id, name,is_default)                           │ │
+││- invitations (id, tenant_id,token_hash, expires_at, ...)               │ │
+│└────────────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────┘
 Swagger UI: /swagger/*any (außerhalb des Präfixes /api/v1)
 ```
 
@@ -356,12 +368,10 @@ Die öffentlichen Routen sind nicht durch `AuthMiddleware` geschützt. Für `POS
 ## Sicherheit und Authentifizierung
 
 - **Access Token:** JWT mit HMAC-Signatur; Ablauf nach 15 Minuten.
-- **Refresh Token:** JWT mit HMAC-Signatur; Ablauf nach sieben Tagen. Das Cookie heißt `refreshToken`, ist `HttpOnly`, wird für den Pfad `/api/v1/auth` und die Domain `localhost` gesetzt und hat derzeit `Secure=false`.
-- **Geschützte Routen:** Müssen einen `Authorization`-Header im Format `Bearer <token>` senden. Die Middleware prüft Signatur und Gültigkeit des Tokens sowie, ob der referenzierte Benutzer noch in der Datenbank existiert.
-- **Passwortspeicherung:** Passwörter werden mit bcrypt gehasht. Das Passwortfeld wird nicht serialisiert.
-- **Autorisierung:** Nur der Event-Ersteller darf sein Event ändern oder löschen. Für das Eintragen und Austragen von Teilnehmern gelten die oben beschriebenen Regeln.
-- **CORS-Hinweis:** Die aktuell bereitgestellte Middleware übernimmt einen nichtleeren `Origin`-Header als `Access-Control-Allow-Origin` und setzt `Access-Control-Allow-Credentials: true`. Sie beschränkt Origins nicht auf `CLIENT_ORIGIN`. Außerdem wird das Refresh-Cookie derzeit für die Domain `localhost` und mit `Secure=false` gesetzt. 
-Diese Cookie- und CORS-Einstellungen werden für eine produktive HTTPS-Bereitstellung passend zkonfiguriert.
+- **Refresh Token:** JWT mit HMAC-Signatur; Ablauf nach sieben Tagen im HttpOnly-Cookie (refreshToken). Bei HTTPS mit Secure und SameSite=None, sonst SameSite=Lax.
+- Passwortspeicherung: Bcrypt-Hashing (max. 72 Bytes). Passwörter werden niemals in JSON-Antworten serialisiert.
+- CORS: Leitet Anfragen nur von konfigurierten CLIENT_ORIGIN-Domains durch und erlaubt Credentials.
+Diese Cookie- und CORS-Einstellungen werden für eine produktive HTTPS-Bereitstellung passend  konfiguriert.
 ---
 
 ## Roadmap

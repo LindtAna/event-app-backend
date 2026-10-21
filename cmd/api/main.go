@@ -11,13 +11,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// @title Go gin REST API
+// @title EventApp Backend API
 // @version 1.0
-// @description a REST API in Go using Gin framework
+// @description Tenant-scoped event management API built with Go and Gin.
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Enter your bearer tken in the forman **Bearer &lt;token&gt;**
+// @description Enter your bearer token in the format **Bearer &lt;token&gt;**
 type application struct {
 	port         int
 	jwtSecret    string

@@ -17,21 +17,14 @@ const docTemplate = `{
     "paths": {
         "/api/v1/attendees/{id}/events": {
             "get": {
-                "description": "Returns all events for a given attendee",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "attendees"
                 ],
-                "summary": "Returns all events for a given attendee",
+                "summary": "Lists events for a user in the authenticated tenant",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Attendee ID",
+                        "description": "User ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -47,12 +40,16 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/api/v1/auth/login": {
             "post": {
-                "description": "Logs in a user",
                 "consumes": [
                     "application/json"
                 ],
@@ -62,10 +59,10 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Logs in a user",
+                "summary": "Meldet einen Benutzer an",
                 "parameters": [
                     {
-                        "description": "User",
+                        "description": "Login-Daten",
                         "name": "user",
                         "in": "body",
                         "required": true,
@@ -78,7 +75,48 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.loginResponse"
+                            "$ref": "#/definitions/main.authResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/logout": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Meldet den Benutzer ab",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/refresh": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Erneuert den Access-Token",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.authResponse"
                         }
                     }
                 }
@@ -86,7 +124,6 @@ const docTemplate = `{
         },
         "/api/v1/auth/register": {
             "post": {
-                "description": "Registers a new user",
                 "consumes": [
                     "application/json"
                 ],
@@ -96,10 +133,10 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Registers a new user",
+                "summary": "Registriert einen Owner oder ein eingeladenes Mitglied",
                 "parameters": [
                     {
-                        "description": "User",
+                        "description": "Registrierungsdaten",
                         "name": "user",
                         "in": "body",
                         "required": true,
@@ -118,19 +155,50 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/events": {
+        "/api/v1/categories": {
             "get": {
-                "description": "Returns all events",
-                "consumes": [
+                "produces": [
                     "application/json"
                 ],
+                "tags": [
+                    "categories"
+                ],
+                "summary": "Listet Kategorien des authentifizierten Tenants auf",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/database.Category"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/events": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "events"
                 ],
-                "summary": "Returns all events",
+                "summary": "Returns events belonging to the authenticated tenant",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Filter by event owner within the tenant",
+                        "name": "ownerId",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -141,15 +209,14 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
-                "description": "Creates a new event",
+                ]
+            },
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -159,7 +226,7 @@ const docTemplate = `{
                 "tags": [
                     "events"
                 ],
-                "summary": "Creates a new event",
+                "summary": "Creates an event in the authenticated tenant",
                 "parameters": [
                     {
                         "description": "Event",
@@ -178,22 +245,23 @@ const docTemplate = `{
                             "$ref": "#/definitions/database.Event"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/api/v1/events/{id}": {
             "get": {
-                "description": "Returns a single event",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "events"
                 ],
-                "summary": "Returns a single event",
+                "summary": "Returns an event belonging to the authenticated tenant",
                 "parameters": [
                     {
                         "type": "integer",
@@ -210,15 +278,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/database.Event"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
-                "description": "Updates an existing event",
+                ]
+            },
+            "put": {
                 "consumes": [
                     "application/json"
                 ],
@@ -228,7 +295,7 @@ const docTemplate = `{
                 "tags": [
                     "events"
                 ],
-                "summary": "Updates an existing event",
+                "summary": "Updates an event created by the authenticated user",
                 "parameters": [
                     {
                         "type": "integer",
@@ -238,7 +305,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Event",
+                        "description": "Updated event",
                         "name": "event",
                         "in": "body",
                         "required": true,
@@ -254,25 +321,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/database.Event"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
-                "description": "Deletes an existing event",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                ]
+            },
+            "delete": {
                 "tags": [
                     "events"
                 ],
-                "summary": "Deletes an existing event",
+                "summary": "Deletes an event created by the authenticated user",
                 "parameters": [
                     {
                         "type": "integer",
@@ -286,22 +346,20 @@ const docTemplate = `{
                     "204": {
                         "description": "No Content"
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/api/v1/events/{id}/attendees": {
             "get": {
-                "description": "Returns all attendees for a given event",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
                 "tags": [
                     "attendees"
                 ],
-                "summary": "Returns all attendees for a given event",
+                "summary": "Lists attendees for an event in the authenticated tenant",
                 "parameters": [
                     {
                         "type": "integer",
@@ -321,27 +379,20 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
-            }
-        },
-        "/api/v1/events/{id}/attendees/{userId}": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
-                "description": "Adds an attendee to an event",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                ]
+            }
+        },
+        "/api/v1/events/{id}/attendees/{userId}": {
+            "post": {
                 "tags": [
                     "attendees"
                 ],
-                "summary": "Adds an attendee to an event",
+                "summary": "Adds a user from the same tenant to an event",
                 "parameters": [
                     {
                         "type": "integer",
@@ -365,25 +416,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/database.Attendee"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
-                "description": "Deletes an attendee from an event",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                ]
+            },
+            "delete": {
                 "tags": [
                     "attendees"
                 ],
-                "summary": "Deletes an attendee from an event",
+                "summary": "Removes an attendee from an event",
                 "parameters": [
                     {
                         "type": "integer",
@@ -404,7 +448,51 @@ const docTemplate = `{
                     "204": {
                         "description": "No Content"
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/users/profile": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Aktualisiert das Profil des angemeldeten Benutzers",
+                "parameters": [
+                    {
+                        "description": "Profildaten",
+                        "name": "profile",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.updateProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         }
     },
@@ -423,42 +511,97 @@ const docTemplate = `{
                 }
             }
         },
+        "database.Category": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "isDefault": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "database.Event": {
             "type": "object",
             "required": [
-                "date",
                 "description",
+                "endDateTime",
                 "location",
-                "name"
+                "startDateTime",
+                "title"
             ],
             "properties": {
-                "date": {
+                "categoryId": {
+                    "type": "string"
+                },
+                "categoryName": {
                     "type": "string"
                 },
                 "description": {
                     "type": "string",
-                    "maxLength": 500,
-                    "minLength": 10
+                    "maxLength": 400,
+                    "minLength": 3
+                },
+                "endDateTime": {
+                    "type": "string"
                 },
                 "id": {
                     "type": "integer"
                 },
+                "imageUrl": {
+                    "type": "string"
+                },
                 "location": {
                     "type": "string",
+                    "maxLength": 200,
                     "minLength": 3
                 },
-                "name": {
-                    "type": "string",
-                    "minLength": 1
+                "owner": {
+                    "$ref": "#/definitions/database.Owner"
                 },
                 "ownerId": {
                     "type": "integer"
+                },
+                "startDateTime": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 3
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Owner": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
         "database.User": {
             "type": "object",
             "properties": {
+                "avatarUrl": {
+                    "type": "string"
+                },
+                "bio": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
                 "email": {
                     "type": "string"
                 },
@@ -467,6 +610,26 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tenantId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "main.authResponse": {
+            "type": "object",
+            "properties": {
+                "accessToken": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/database.User"
                 }
             }
         },
@@ -486,23 +649,28 @@ const docTemplate = `{
                 }
             }
         },
-        "main.loginResponse": {
-            "type": "object",
-            "properties": {
-                "token": {
-                    "type": "string"
-                }
-            }
-        },
         "main.registerRequest": {
             "type": "object",
             "required": [
                 "email",
                 "name",
-                "password"
+                "password",
+                "registrationType"
             ],
             "properties": {
+                "avatarUrl": {
+                    "type": "string"
+                },
+                "bio": {
+                    "type": "string"
+                },
+                "companyName": {
+                    "type": "string"
+                },
                 "email": {
+                    "type": "string"
+                },
+                "invitationCode": {
                     "type": "string"
                 },
                 "name": {
@@ -512,13 +680,38 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "minLength": 8
+                },
+                "registrationType": {
+                    "type": "string",
+                    "enum": [
+                        "owner",
+                        "member"
+                    ]
+                }
+            }
+        },
+        "main.updateProfileRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "avatarUrl": {
+                    "type": "string"
+                },
+                "bio": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 2
                 }
             }
         }
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Enter your bearer tken in the forman **Bearer \u0026lt;token\u0026gt;**",
+            "description": "Enter your bearer token in the format **Bearer \u0026lt;token\u0026gt;**",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
@@ -532,8 +725,8 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "",
 	BasePath:         "",
 	Schemes:          []string{},
-	Title:            "Go gin REST API",
-	Description:      "a REST API in Go using Gin framework",
+	Title:            "EventApp Backend API",
+	Description:      "Tenant-scoped event management API built with Go and Gin.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
