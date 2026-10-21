@@ -150,7 +150,7 @@ func (m *AttendeeModel) GetAttendeesByEvent(
 	defer cancel()
 
 	query := `
-		SELECT u.id, u.name, u.email
+		SELECT u.id, u.name
 		FROM attendees a
 		JOIN users u
 			ON u.tenant_id = a.tenant_id

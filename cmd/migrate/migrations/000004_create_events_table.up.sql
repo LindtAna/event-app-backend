@@ -16,7 +16,7 @@ CREATE TABLE events (
         REFERENCES users (tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT events_category_same_tenant_fk
         FOREIGN KEY (tenant_id, category_id)
-        REFERENCES categories (tenant_id, id) ON DELETE RESTRICT
+        REFERENCES categories (tenant_id, id) ON DELETE NO ACTION
 );
 
 CREATE INDEX events_tenant_start_time_idx
