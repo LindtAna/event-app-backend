@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	// "github.com/golang-jwt/jwt/v5"
 )
 
 func (app *application) AuthMiddleware() gin.HandlerFunc {
@@ -36,7 +35,9 @@ func (app *application) AuthMiddleware() gin.HandlerFunc {
 
 		// Benutzerdaten bei jedem geschützten Request neu aus der DB laden.
 		// TenantID und Rolle werden nicht aus dem Token übernommen.
-		user, err := app.models.Users.Get(claims.UserID)
+		user, err := app.models.Users.Get(
+			c.Request.Context(),
+			claims.UserID)
 		if err != nil {
 			log.Printf("Authenticated user lookup failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{

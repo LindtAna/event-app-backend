@@ -92,7 +92,7 @@ func (m *EventModel) UpdateWithCategory(
 	err = tx.QueryRowContext(
 		ctx,
 		`SELECT category_id FROM events
-		WHERE id = ? AND tenant_id = ? AND owner_id = ?`,
+		WHERE tenanti_id = ? AND id = ? AND owner_id = ?`,
 		tenantID,
 		event.Id,
 		ownerID,
@@ -185,7 +185,7 @@ func (m *EventModel) DeleteWithCategory(
 	err = tx.QueryRowContext(
 		ctx,
 		`SELECT category_id FROM events
-		WHERE id = ? AND tenant_id = ? AND owner_id = ?`,
+		WHERE tenant_id = ? AND id = ? AND owner_id = ?`,
 		tenantID,
 		eventID,
 		ownerID,

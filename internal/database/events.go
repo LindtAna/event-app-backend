@@ -87,43 +87,6 @@ func scanEvent(row eventScanner) (*Event, error) {
 	return &event, nil
 }
 
-// func (m *EventModel) Insert(event *Event) error {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
-
-// 	query := `
-// 		INSERT INTO events(owner_id, title, description,
-// 		image_url, location, start_date_time, end_date_time,
-// 		category_id, url)
-// 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-// 	`
-// 	result, err := m.DB.ExecContext(
-// 		ctx,
-// 		query,
-// 		event.OwnerId,
-// 		event.Title,
-// 		event.Description,
-// 		event.ImageUrl,
-// 		event.Location,
-// 		event.StartDateTime,
-// 		event.EndDateTime,
-// 		event.CategoryId,
-// 		event.Url,
-// 	)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	id, err := result.LastInsertId()
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	event.Id = int(id)
-// 	return nil
-
-// }
-
 func (m *EventModel) GetAll(
 	ctx context.Context,
 	tenantID int,
@@ -218,65 +181,4 @@ func (m *EventModel) GetByOwnerID(
 	}
 
 	return m.queryEvents(ctx, tenantID, &ownerID)
-}
-
-func (m *EventModel) Update(event *Event) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	query := `
-		UPDATE events 
-		SET title = ?, description = ?, image_url = ?, location = ?,
-		start_date_time = ?, end_date_time = ?,
-		category_id = ?, url = ? 
-		WHERE id = ?
-	`
-	result, err := m.DB.ExecContext(
-		ctx,
-		query,
-		event.Title,
-		event.Description,
-		event.ImageUrl,
-		event.Location,
-		event.StartDateTime,
-		event.EndDateTime,
-		event.CategoryId,
-		event.Url,
-		event.Id,
-	)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
-}
-
-func (m *EventModel) Delete(id int) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	query := "DELETE FROM events WHERE id = ?"
-
-	result, err := m.DB.ExecContext(ctx, query, id)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return sql.ErrNoRows
-	}
-
-	return nil
-
 }

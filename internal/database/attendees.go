@@ -28,7 +28,7 @@ func (m *AttendeeModel) Insert(
 		return ErrInvalidEventScope
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	tx, err := m.DB.BeginTx(ctx, nil)
@@ -108,7 +108,7 @@ func (m *AttendeeModel) GetByEventAndAttendee(
 	if tenantID <= 0 || eventID <= 0 || userID <= 0 {
 		return nil, ErrInvalidEventScope
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	query := `
@@ -146,7 +146,7 @@ func (m *AttendeeModel) GetAttendeesByEvent(
 		return nil, ErrInvalidEventScope
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	query := `
@@ -167,7 +167,6 @@ func (m *AttendeeModel) GetAttendeesByEvent(
 
 	defer rows.Close()
 
-	// var users []*User
 	users := make([]*User, 0)
 
 	for rows.Next() {
@@ -195,7 +194,7 @@ func (m *AttendeeModel) Delete(
 	if tenantID <= 0 || userID <= 0 || eventID <= 0 {
 		return ErrInvalidEventScope
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	result, err := m.DB.ExecContext(ctx, `
@@ -232,7 +231,7 @@ func (m *AttendeeModel) GetEventsByAttendee(
 	if tenantID <= 0 || attendeeID <= 0 {
 		return nil, ErrInvalidEventScope
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	query := `

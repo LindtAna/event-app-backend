@@ -106,6 +106,9 @@ func (m *UserModel) Insert(user *User) error {
 func (m *UserModel) getUser(
 	ctx context.Context, query string,
 	args ...interface{}) (*User, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
 	var user User
 
 	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
@@ -131,21 +134,28 @@ func (m *UserModel) getUser(
 	return &user, nil
 }
 
-func (m *UserModel) Get(id int) (*User, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+func (m *UserModel) Get(
+	ctx context.Context,
+	id int,
+) (*User, error) {
+	if id <= 0 {
+		return nil, ErrInvalidUser
+	}
 
 	return m.getUser(ctx, userSelect+` WHERE id = ?`, id)
 }
 
-func (m *UserModel) GetByEmail(email string) (*User, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+func (m *UserModel) GetByEmail(ctx context.Context,
+	email string) (*User, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return nil, ErrInvalidUser
+	}
 
 	return m.getUser(
 		ctx,
 		userSelect+` WHERE email = ?`,
-		normalizeEmail(email),
+		email,
 	)
 }
 
@@ -153,6 +163,9 @@ func (m *UserModel) GetByIDInTenant(
 	ctx context.Context,
 	tenantID, userID int,
 ) (*User, error) {
+	if tenantID <= 0 || userID <= 0 {
+		return nil, ErrInvalidUser
+	}
 	return m.getUser(
 		ctx,
 		userSelect+` WHERE tenant_id = ? AND id = ?`,
@@ -162,19 +175,29 @@ func (m *UserModel) GetByIDInTenant(
 }
 
 // Aktualisierung des Profils
-func (m *UserModel) UpdateProfile(id int, name, bio, avatarUrl string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+func (m *UserModel) UpdateProfile(ctx context.Context,
+	tenantID, userID int,
+	name, bio, avatarUrl string,
+) error {
+	if tenantID <= 0 || userID <= 0 {
+		return ErrInvalidUser
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	result, err := m.DB.ExecContext(ctx, `
 		UPDATE users
 		SET name = ?, bio = ?, avatar_url = ?
-		WHERE id = ? AND status = 'active'
+		WHERE tenant_id = ?
+          AND id = ?
+          AND status = 'active'
 	`,
 		strings.TrimSpace(name),
 		bio,
 		avatarUrl,
-		id,
+		tenantID,
+		userID,
 	)
 	if err != nil {
 		return err

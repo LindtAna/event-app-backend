@@ -3,7 +3,10 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 )
+
+var ErrInvalidCategoryScope = errors.New("invalid category scope")
 
 type Category struct {
 	ID        string `json:"id"`
@@ -18,6 +21,11 @@ type CategoryModel struct {
 func (m CategoryModel) GetAll(
 	ctx context.Context,
 	tenantID int) ([]Category, error) {
+
+	if tenantID <= 0 {
+		return nil, ErrInvalidCategoryScope
+	}
+
 	query := `
 		SELECT id, name, is_default
 		FROM categories

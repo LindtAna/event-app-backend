@@ -69,7 +69,13 @@ func (m *InvitationModel) Create(
 
 	expiration := expiresAt.UTC().Format("2006-01-02 15:04:05")
 
-	result, err := m.DB.ExecContext(ctx, `
+	tx, err := m.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO invitations (
 			tenant_id,
 			token_hash,
@@ -93,7 +99,7 @@ func (m *InvitationModel) Create(
 	}
 
 	var createdAt string
-	err = m.DB.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		SELECT created_at
 		FROM invitations
 		WHERE id = ? AND tenant_id = ?
@@ -110,6 +116,9 @@ func (m *InvitationModel) Create(
 		CreatedAt: createdAt,
 	}
 
+	if err := tx.Commit(); err != nil {
+		return nil, "", err
+	}
 	return invitation, rawToken, nil
 }
 

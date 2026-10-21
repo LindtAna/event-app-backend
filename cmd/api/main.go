@@ -26,7 +26,10 @@ type application struct {
 }
 
 func main() {
-	// db, err := sql.Open("sqlite", "./data.db")
+	jwtSecret := env.GetEnvString("JWT_SECRET", "")
+	if len(jwtSecret) < 32 {
+		log.Fatal("JWT_SECRET must be set and contain at least 32 bytes")
+	}
 	db, err := sql.Open(
 		"sqlite",
 		"file:./data.db?_pragma=foreign_keys(1)",
@@ -35,22 +38,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	defer db.Close()
-
 	if err := db.Ping(); err != nil {
 		log.Fatal(err)
 	}
-
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 
 	defer db.Close()
 
 	models := database.NewModels(db)
 	app := &application{
 		port:         env.GetEnvInt("PORT", 8080),
-		jwtSecret:    env.GetEnvString("JWT_SECRET", "somes-secret-1234"),
+		jwtSecret:    jwtSecret,
 		clientOrigin: env.GetEnvString("CLIENT_ORIGIN", "http://localhost:5173"),
 		models:       models,
 	}

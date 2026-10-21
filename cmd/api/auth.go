@@ -247,6 +247,13 @@ func (app *application) registerUser(c *gin.Context) {
 		return
 	}
 
+	if len(register.Password) > 72 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Password must not exceed 72 bytes",
+		})
+		return
+	}
+
 	if strings.TrimSpace(register.Name) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Name is required",
@@ -366,16 +373,14 @@ func (app *application) registerUser(c *gin.Context) {
 
 // updateProfile aktualisiert das Profil des angemeldeten Benutzers.
 func (app *application) updateProfile(c *gin.Context) {
-	userIDValue, exists := c.Get("userId")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Unauthorized",
-		})
-		return
-	}
+	userValue, exists := c.Get("user")
+	authUser, ok := userValue.(*database.User)
 
-	userID, ok := userIDValue.(int)
-	if !ok || userID <= 0 {
+	if !exists ||
+		!ok ||
+		authUser == nil ||
+		authUser.Id <= 0 ||
+		authUser.TenantID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "Unauthorized",
 		})
@@ -398,8 +403,12 @@ func (app *application) updateProfile(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	err := app.models.Users.UpdateProfile(
-		userID,
+		ctx,
+		authUser.TenantID,
+		authUser.Id,
 		name,
 		req.Bio,
 		strings.TrimSpace(req.AvatarUrl),
@@ -411,7 +420,12 @@ func (app *application) updateProfile(c *gin.Context) {
 			})
 			return
 		}
-
+		if errors.Is(err, database.ErrInvalidUser) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid user data",
+			})
+			return
+		}
 		log.Printf("Profile update failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update profile",
@@ -419,7 +433,11 @@ func (app *application) updateProfile(c *gin.Context) {
 		return
 	}
 
-	updatedUser, err := app.models.Users.Get(userID)
+	updatedUser, err := app.models.Users.GetByIDInTenant(
+		ctx,
+		authUser.TenantID,
+		authUser.Id,
+	)
 	if err != nil {
 		log.Printf("Updated user lookup failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -459,7 +477,15 @@ func (app *application) login(c *gin.Context) {
 		return
 	}
 
+	if len(auth.Password) > 72 {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Invalid email or password",
+		})
+		return
+	}
+
 	existingUser, err := app.models.Users.GetByEmail(
+		c.Request.Context(),
 		strings.TrimSpace(auth.Email),
 	)
 	if err != nil {
@@ -551,7 +577,9 @@ func (app *application) refreshToken(c *gin.Context) {
 		return
 	}
 
-	user, err := app.models.Users.Get(claims.UserID)
+	user, err := app.models.Users.Get(
+		c.Request.Context(),
+		claims.UserID)
 	if err != nil {
 		log.Printf("User lookup during token refresh failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
