@@ -92,13 +92,16 @@ CLIENT_ORIGIN=http://localhost:5173
 
 ---
 ## Ausführen der Migrationen
-Vor dem Start müssen die Datenbankmigrationen ausgeführt werden. Die SQLite-Datei data.db wird dabei im Root-Verzeichnis angelegt.
+Vor dem Start müssen die Datenbankmigrationen ausgeführt werden. Die SQLite-Datei data.db wird dabei im Root-Verzeichnis angelegt
 
 ```
 go run ./cmd/migrate up
 go run ./cmd/api
+
 ```
-(Migrationen lassen sich bei Bedarf mit go run ./cmd/migrate down zurücksetzen).
+
+Migrationen lassen sich bei Bedarf mit `go run ./cmd/migrate down` zurücksetzen
+
 ---
 
 ## API-Dokumentation
@@ -167,7 +170,7 @@ Die Teilnehmerliste liefert Benutzerinformationen aus den Feldern `id` und `name
 
 Die SQLite-Datenbank wird durch die Migrationen `000001` bis `000006` strukturiert. Die Migrationen definieren die Tabellen `tenants`,`users`,`invitations`, `events`, `attendees` und `categories` einschließlich der unten aufgeführten Datentypen, Standardwerte und Constraints.
 
-### `tenants`
+### tenants
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`)|
@@ -177,7 +180,7 @@ Die SQLite-Datenbank wird durch die Migrationen `000001` bis `000006` strukturie
 | `status` | `TEXT` | `NOT NULL`, Standardwert 'active', CHECK (status IN ('active', 'suspended'))|
 | `created_at` | `TEXT` | `NOT NULL`, Standardwert 'CURRENT_TIMESTAMP'|
 
-### `users`
+### users
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
@@ -193,7 +196,7 @@ Die SQLite-Datenbank wird durch die Migrationen `000001` bis `000006` strukturie
 
 Im Go-Modell ist das Passwort mit json:"-" markiert und wird deshalb nicht in JSON-Antworten serialisiert. Die Kombination aus (tenant_id, id) ist über einen Unique-Constraint abgesichert
 
-### `invitations`
+### invitations
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
@@ -206,7 +209,7 @@ Im Go-Modell ist das Passwort mit json:"-" markiert und wird deshalb nicht in JS
 | `created_by` | `INTEGER` |  `NOT NULL`; ID des Erstellers (Verweis auf users)|
 | `created_at` | `TEXT` |  `NOT NULL`; Standardwert `CURRENT_TIMESTAMP`|
 
-### `events`
+### events
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
@@ -224,7 +227,7 @@ Im Go-Modell ist das Passwort mit json:"-" markiert und wird deshalb nicht in JS
 Die Migration deklariert einen Fremdschlüssel von `owner_id` auf `users.id`. 
 Die Kategorie wird stattdessen in der Anwendung durch `resolveCategory` validiert bzw. aufgelöst. 
 
-### `attendees`
+### attendees
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
@@ -235,7 +238,7 @@ Die Kategorie wird stattdessen in der Anwendung durch `resolveCategory` validier
 
 Unique-Constraint: UNIQUE (tenant_id, event_id, user_id) verhindert doppelte Anmeldungen desselben Benutzers zum selben Event innerhalb desselben Tenants direkt auf DB-Ebene
 
-### `categories`
+### categories
 | Feld | Typ | Eigenschaften / Zweck |
 |---|---|---|
 | `tenant_id` | `TEXT` | `NOT NULL`; Fremdschlüssel auf tenants(id) mit `ON DELETE CASCADE`|
@@ -283,70 +286,70 @@ Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Katego
 ### System-Architektur
 
 ```text
-                Frontend / HTTP-Client
-                        │
-┌────────────────────── ▼ ─────────────────────────────────────────────────┐
-│            Gin HTTP-Server                                               │
-│             - Gin Logger und Recovery                                    │
-│            - CORSMiddleware (global; behandelt auch OPTIONS-Preflight)   │
-│                           |                                              │
-│  ┌─────────────────────── ▼ ────────────────────────────────────┐        │
-│  │ AuthMiddleware (Prüft Bearer Access Token & Tenant-Status)   │        │
-│  └──────────────────────────────────────────────────────────────┘        │
-│  ┌────────────────────────│───────────────────────────────────┐          │
-│  │                        │                                   │          │
-│  │  ┌──────────────────── ▼ ─┐        ┌────────────────────── ▼ ──────┐  │
-│  │  │ Öffentliche API-Routen │        │ Geschützte API-Routen         │  │
-│  │  │ Präfix: /api/v1        │        │ Präfix: /api/protected        │  │
-│  │  │                        │        │                               │  │
-│  │  │ Auth                   │        │ Benutzerprofil                │  │
-│  │  │- POST /auth/register   │        │- PUT /users/profile           │  │
-│  │  │(Modus: owner / member) │        │                               │  │
-│  │  │- POST /auth/login      │        │Events                         │  │
-│  │  │- POST /auth/refresh    │        │- GET /events                  │  │
-│  │  │- POST /auth/logout     │        │- GET /events/:id              │  │
-│  │  │                        │        │- POST /events                 │  │
-│  │  │                        │        │- PUT /events/:id              │  │
-│  │  │                        │        │- DELETE /events/:id           │  │
-│  │  │                        │        │                               │  │
-│  │  │                        │        │Kategorien                     │  │
-│  │  │                        │        │- GET /categories              │  │
-│  │  │                        │        │                               │  │
-│  │  │                        │        │Teilnahmeverwaltung            │  │
-│  │  │                        │        │- GET /events/:id/attendees    │  │
-│  │  │                        │        │- GET /attendees/:id/events    │  │
-│  │  │                        │        │- POST /events/:id/attendees   │  │
-│  │  │                        │        │- DELETE /events/:id/attendees │  │
-│  │  └────────────────────────┘        └───────────────────────────────┘  │
-│  └─────────────────────────────────────────────────────────────────────┘ │
-│                               │                                          │
-│              ┌─────────────── ▼ ──────────────────┐                      │
-│              │ HTTP-Handler / Application Methods │                      │
-│              │           (cmd/api)                │                      │
-│              └────────────────────────────────────┘                      │
-│                              │                                           │
-│ ┌─────────────────────────── ▼ ────────────────────────────────────────┐ │
-│ │                Datenbankmodelle & Tenant-Logik                       │ │
-│ │                    (internal/database)                               │ │
-│ │     ┌───────────────────────────────────────────────────────┐        │ │
-│ │     │          │        │         │           │             │        │ │
-│ │ ┌───▼────┐ ┌───▼──┐ ┌───▼──┐ ┌────▼────┐ ┌────▼──────┐ ┌────▼─────┐  │ │
-│ │ │Tenants │ │ Users│ │Events│ │Attendees│ │Invitations│ │Categories│  │ │
-│ │ └────────┘ └──────┘ └──────┘ └─────────┘ └───────────┘ └──────────┘  │ │
-│ │                        │                                             │ │
-│ │       ┌────────────────▼───────────────────┐                         │ │
-│ │       │event_categories.go                 │                         │ │
-│ │       │- Tenant-Kategorie auflösen         │                         │ │
-│ │       │- Transaktional erstellen/bereinigen│                         │ │
-│ │       └────────────────────────────────────┘                         │ │
-│ └──────────────────────────────────────────────────────────────────────┘ │
-│                                       │                                   │
-│                        ┌──────────────▼────────────────┐                  │
-│                        │  database/sql + SQLite-Treiber│                  │
-│                        │ (modernc.org/sqlite)          │                  │
-│                        └───────────────────────────────┘                  │
-│                                        │                                  │
-│┌───────────────▼────────────────────────────────────────────────────────┐ │
+                          Frontend / HTTP-Client
+                                   │
+┌───────────────────────────────── ▼ ───────────────────────────────────────┐
+│            Gin HTTP-Server                                                │
+│             - Gin Logger und Recovery                                     │
+│            - CORSMiddleware (global; behandelt auch OPTIONS-Preflight)    │
+│                                  |                                        │
+│  ┌────────────────────────────── ▼ ─────────────────────────────┐         │
+│  │ AuthMiddleware (Prüft Bearer Access Token & Tenant-Status)   │         │
+│  └──────────────────────────────────────────────────────────────┘         │
+│  ┌────────────────────────│───────────────────────────────────┐           │
+│  │                        │                                   │           │
+│  │  ┌──────────────────── ▼ ─┐        ┌────────────────────── ▼ ──────┐   │
+│  │  │ Öffentliche API-Routen │        │ Geschützte API-Routen         │   │
+│  │  │ Präfix: /api/v1        │        │ Präfix: /api/protected        │   │
+│  │  │                        │        │                               │   │
+│  │  │ Auth                   │        │ Benutzerprofil                │   │
+│  │  │- POST /auth/register   │        │- PUT /users/profile           │   │
+│  │  │(Modus: owner / member) │        │                               │   │
+│  │  │- POST /auth/login      │        │Events                         │   │
+│  │  │- POST /auth/refresh    │        │- GET /events                  │   │
+│  │  │- POST /auth/logout     │        │- GET /events/:id              │   │
+│  │  │                        │        │- POST /events                 │   │
+│  │  │                        │        │- PUT /events/:id              │   │
+│  │  │                        │        │- DELETE /events/:id           │   │
+│  │  │                        │        │                               │   │
+│  │  │                        │        │Kategorien                     │   │
+│  │  │                        │        │- GET /categories              │   │
+│  │  │                        │        │                               │   │
+│  │  │                        │        │Teilnahmeverwaltung            │   │
+│  │  │                        │        │- GET /events/:id/attendees    │   │
+│  │  │                        │        │- GET /attendees/:id/events    │   │
+│  │  │                        │        │- POST /events/:id/attendees   │   │
+│  │  │                        │        │- DELETE /events/:id/attendees │   │
+│  │  └────────────────────────┘        └───────────────────────────────┘   │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                               │                                           │
+│              ┌─────────────── ▼ ──────────────────┐                       │
+│              │ HTTP-Handler / Application Methods │                       │
+│              │           (cmd/api)                │                       │
+│              └────────────────────────────────────┘                       │
+│                              │                                            │
+│ ┌─────────────────────────── ▼ ────────────────────────────────────────┐  │
+│ │                Datenbankmodelle & Tenant-Logik                       │  │
+│ │                    (internal/database)                               │  │
+│ │     ┌───────────────────────────────────────────────────────┐        │  │
+│ │     │          │        │         │           │             │        │  │
+│ │ ┌───▼────┐ ┌───▼──┐ ┌───▼──┐ ┌────▼────┐ ┌────▼──────┐ ┌────▼─────┐  │  │
+│ │ │Tenants │ │ Users│ │Events│ │Attendees│ │Invitations│ │Categories│  │  │
+│ │ └────────┘ └──────┘ └──────┘ └─────────┘ └───────────┘ └──────────┘  │  │
+│ │                        │                                             │  │
+│ │       ┌────────────────▼───────────────────┐                         │  │
+│ │       │event_categories.go                 │                         │  │
+│ │       │- Tenant-Kategorie auflösen         │                         │  │
+│ │       │- Transaktional erstellen/bereinigen│                         │  │
+│ │       └────────────────────────────────────┘                         │  │
+│ └──────────────────────────────────────────────────────────────────────┘  │
+│                               │                                           │
+│                 ┌─────────────▼─────────────────┐                         │
+│                 │  database/sql + SQLite-Treiber│                         │
+│                 │ (modernc.org/sqlite)          │                         │
+│                 └───────────────────────────────┘                         │
+│                               │                                           │
+│┌───────────────────────────── ▼ ────────────────────────────────────────┐ │
 ││   SQLite-Datenbank: data.db                                            │ │
 ││                                                                        │ │
 ││ Tenant-gebundene Tabellen:                                             │ │
