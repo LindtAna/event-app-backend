@@ -83,6 +83,15 @@ func insertUserTx(ctx context.Context, tx *sql.Tx, user *User) error {
 
 	user.Id = int(id)
 	user.Email = normalizeEmail(user.Email)
+
+	if err := tx.QueryRowContext(ctx, `
+    SELECT created_at
+    FROM users
+    WHERE id = ?
+`, user.Id).Scan(&user.CreatedAt); err != nil {
+		return err
+	}
+
 	return nil
 }
 

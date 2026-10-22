@@ -21,7 +21,8 @@ Benutzer können sich als Tenant-Owner (mit Firmennamen) oder als Member (per Ei
 - **Erweiterte Benutzerverwaltung:** Registrierung als `owner` (erstellt Tenant + Admin) oder `member` (über Einladungscode). Aktualisierung des Benutzerprofils.
 - **Token-basierte Authentifizierung:** Kurzlebiger Access Token (15 Min.) und Refresh Token (7 Tage) in einem HttpOnly-Cookie (mit adaptiven SameSite/Secure-Attributen).
 - **Event-Management:** CRUD-Operationen für Events innerhalb des eigenen Tenants; Filterung nach Ersteller-ID.
-- **Teilnehmer-Management:** Benutzer können sich für Events anmelden und wieder abmelden; Abfrage von Teilnehmern pro Event mit tenantweiter Eindeutigkeitsprüfung..
+- **Teilnehmer-Management:** Benutzer können sich für Events anmelden und wieder abmelden; Abfrage von Teilnehmern pro Event mit tenantweiter Eindeutigkeitsprüfung.
+- Einladungsverwaltung: Tenant-Owner können Einladungen erstellen, tenantbezogen auflisten und widerrufen. Mitglieder registrieren sich mit einem gültigen Einladungscode.
 - **Zugriffskontrolle & Rollen:** Tenantbezogene Rechte (Owner vs. Member). Nur der Ersteller oder Tenant-Admin darf Events verwalten.
 - **API-Dokumentation:** Automatisch generierte und interaktive Swagger-UI.
 - **Striktes CORS-Management:** Middleware zur sicheren Verarbeitung von Cross-Origin-Anfragen basierend auf erlaubten `CLIENT_ORIGIN`-Werten.
@@ -49,6 +50,7 @@ Benutzer können sich als Tenant-Owner (mit Firmennamen) oder als Member (per Ei
 │  │   ├── middleware.go    # JWT-Authentifizierung, Tenant-Prüfung und CORS
 │  │   ├── auth.go          # Registrierung (Owner/Member), Login, Tokens und Profil
 │  │   ├── events.go        # Event- und Teilnehmer-Handler
+│  │   ├── invitations.go        # Owner-only HTTP-Handler für Einladungen
 │  │   ├── categories.go    # HTTP-Handler zum Abrufen der Tenant-Kategorien
 │  │   └── context.go       # Helper zum Extrahieren des authentifizierten Benutzers/Tenants
 │  └── migrate
@@ -123,6 +125,22 @@ Die im Router registrierten API-Routen verwenden das Präfix `/api/v1`.
 | `POST` | `/api/v1/auth/refresh` | Refresh-Cookie | Neuen Access Token ausstellen |
 | `POST` | `/api/v1/auth/logout` | Öffentlich | Refresh-Cookie löschen |
 | `PUT` | `/api/v1/users/profile` | Bearer Access Token | Name, Bio und Avatar-URL des eigenen Profils aktualisieren |
+
+#### Registrierungs-Modi (registrationType):
+- `owner`: Erstellt einen neuen Tenant und den Administrator. Erfordert companyName, email, password, name
+- `member`: Tritt einem bestehenden Tenant bei. Übermittelt den erhaltenen `invitationCode` im Feld invitationCode. Die Einladung muss gültig sein, darf nicht abgelaufen, verwendet oder widerrufen sein, und der zugehörige Tenant muss aktiv sein. Das Anlegen des Mitglieds und das Markieren der Einladung als verwendet erfolgen atomar in einer Transaktion. Tenant-ID, Rolle (member) und Status werden serverseitig festgelegt.
+
+#### Einladungen (Tenant-Owner)
+
+| Methode | Endpunkt | Authentifizierung | Beschreibung |
+|---|---|---|---|
+| `POST` | `/api/v1/invitations` | Bearer Access Token, Rolle owner | Erstellt eine Einladung für den eigenen Tenant|
+| `GET` | `/api/v1/invitations` | Bearer Access Token, Rolle owner | owner	Listet Einladungen des eigenen Tenants aufn |
+| `DELETE` | `/api/v1/auth/refresh` | Bearer Access Token, Rolle owner| Widerruft eine aktive Einladung des eigenen Tenants |
+
+`POST /api/v1/invitations` erwartet ein JSON-Objekt mit expiresAt. Der Wert muss ein gültiger RFC3339-Zeitstempel sein und in der Zukunft liegen. Die Antwort enthält das Einladungsobjekt und invitationCode, das rohe Token, das nur bei der Erstellung zurückgegeben wird. Gespeichert wird in der Datenbank ausschließlich sein SHA-256-Hash; der ursprüngliche Einladungscode kann danach nicht erneut abgerufen werden. Der Code muss deshalb bei der Erstellung an das einzuladende Mitglied weitergegeben werden.
+
+Die Verwaltungsendpunkte für Einladungen sind durch den Bearer Access Token und zusätzlich durch die Rolle owner geschützt. Mitglieder erhalten bei diesen Endpunkten 403 Forbidden. Der Tenant wird ausschließlich aus dem authentifizierten Benutzerkontext abgeleitet; ein tenantId im Request ist nicht erforderlich und wird nicht vertraut.
 
 #### Registrierungs-Modi (registrationType):
 - `owner`: Erstellt einen neuen Tenant und den Administrator. Erfordert companyName, email, password, name
@@ -201,9 +219,8 @@ Im Go-Modell ist das Passwort mit json:"-" markiert und wird deshalb nicht in JS
 |---|---|---|
 | `id` | `INTEGER` | Primärschlüssel (`PRIMARY KEY`), automatisch erhöht (`AUTOINCREMENT`) |
 | `tenant_id` | `INTEGER` | `NOT NULL`; Tenant-Zuordnung|
-| `token_hash` | `TEXT` | `NOT NULL`, `UNIQUE`; gehashter Einladungstoken |
-| `expires_at` | `TEXT` | `NOT NULL`; Anzeigename |
-| `password_hash` | `TEXT` | `NOT NULL`; Ablaufzeitpunkt der Einladung |
+| `token_hash` | `TEXT` | `NOT NULL`, `UNIQUE`; SHA-256-Hash des Einladungstokens; der Klartext-Token wird nicht gespeichert |
+| `expires_at` | `TEXT` | `NOT NULL`; Ablaufzeitpunkt der Einladung |
 | `used_at` | `TEXT` | Optional; Zeitpunkt der Verwendung |
 | `revoked_at` | `TEXT` | Optional; Zeitpunkt des Widerrufs |
 | `created_by` | `INTEGER` |  `NOT NULL`; ID des Erstellers (Verweis auf users)|
@@ -263,13 +280,15 @@ Unique-Constraint: UNIQUE (tenant_id, event_id, user_id) verhindert doppelte Anm
 ## Architektur
 
 Das Projekt folgt einer klaren Separation of Concerns (SoC), trennt HTTP-Verarbeitung, Authentifizierung und Datenbankzugriffe:
-:
 
 - **Routing & Handling (cmd/api):** Registrieren die Endpunkte, validieren Request-Daten, wenden Zugriffskontrollen an und erzeugen HTTP-Antworten.
 - **Middleware (`cmd/api/middleware.go`):** Prüft bei geschützten Routen den Bearer Access Token und stellt `user` sowie `userId` im Gin-Kontext bereit. Die CORS-Middleware behandelt Cross-Origin-Anfragen und OPTIONS-Preflight-Requests.
 - **Datenzugriff (`internal/database`):** Kapselt SQL-Abfragen für Benutzer, Events, Teilnehmer und Kategorien.
+- Einladungen (`cmd/api/invitations.go`): Stellt Owner-only-Endpunkte zum Erstellen, Auflisten und Widerrufen von Einladungen bereit.
 - **Kategorieauflösung (`internal/database/event_categories.go`):** Löst vorhandene Kategorien auf, erstellt bei Bedarf benutzerdefinierte Kategorien und bereinigt ungenutzte Kategorien in Datenbanktransaktionen.
 - **Konfiguration (`internal/env`):** Enthält Hilfsfunktionen zum Laden von Konfigurationswerten.
+
+
 ### Ablauf: Authentifizierung
 
 1. Bei `POST /api/v1/auth/register` wird das Passwort mit bcrypt gehasht und der Benutzer gespeichert.
@@ -282,6 +301,14 @@ Das Projekt folgt einer klaren Separation of Concerns (SoC), trennt HTTP-Verarbe
 ### Ablauf: Event und Kategorie
 
 Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Kategorieauflösung in einer Transaktion zusammengefasst. Eine Kategorie wird entweder anhand einer gültigen `categoryId` gefunden oder anhand von `categoryName` wiederverwendet bzw. neu angelegt. Beim Wechsel oder Löschen eines Events wird geprüft, ob die bisherige benutzerdefinierte Kategorie noch von anderen Events verwendet wird.
+
+Ablauf: Einladungen
+- Ein Tenant-Owner erstellt über `POST /api/v1/invitations` eine Einladung mit einem Ablaufzeitpunkt in der Zukunft.
+- Die API gibt den einmaligen `invitationCode` zurück und speichert ausschließlich dessen SHA-256-Hash.
+- Der Owner übermittelt den Einladungscode an das gewünschte Mitglied.
+- Das Mitglied registriert sich über `POST /api/v1/auth/register` mit `registrationType: "member" ` und `invitationCode`.
+- Die API validiert Einladung und Tenant und erstellt den Benutzer sowie den Verbrauch der Einladung gemeinsam in einer Transaktion.
+- Der Owner kann Einladungen über `GET /api/v1/invitations` auflisten und noch gültige, ungenutzte Einladungen über `DELETE /api/v1/invitations/:id` widerrufen.
 
 ### System-Architektur
 
@@ -320,6 +347,11 @@ Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Katego
 │  │  │                        │        │- GET /attendees/:id/events    │   │
 │  │  │                        │        │- POST /events/:id/attendees   │   │
 │  │  │                        │        │- DELETE /events/:id/attendees │   │
+│  │  │                        │        │                               │   │
+│  │  │                        │        │Einladungen (Owner)            │   │
+│  │  │                        │        │- POST /invitations            │   │
+│  │  │                        │        │- GET /invitations             │   │
+│  │  │                        │        │- DELETE /invitations/:id      │   │
 │  │  └────────────────────────┘        └───────────────────────────────┘   │
 │  └─────────────────────────────────────────────────────────────────────┘  │
 │                               │                                           │
@@ -354,9 +386,9 @@ Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Katego
 ││                                                                        │ │
 ││ Tenant-gebundene Tabellen:                                             │ │
 ││- tenants (id, name, slug, status)                                      │ │
-││- users (id, tenant_id,email, name,password, role, status, ...)         │ │
+││- users (id, tenant_id, email, name,password, role, status, ...)        │ │
 ││- events (id, tenant_id, owner_id,title, description, category_id,...)  │ │
-││- attendees (id, tenant_id, user_id,event_id, UNIQUE(tenant,event,user))│ │
+││- attendees (id, tenant_id, user_id, event_id, UNIQUE(tenant,event,usr))│ │
 ││- categories (id, tenant_id, name,is_default)                           │ │
 ││- invitations (id, tenant_id,token_hash, expires_at, ...)               │ │
 │└────────────────────────────────────────────────────────────────────────┘ │
@@ -373,6 +405,7 @@ Die öffentlichen Routen sind nicht durch `AuthMiddleware` geschützt. Für `POS
 - **Access Token:** JWT mit HMAC-Signatur; Ablauf nach 15 Minuten.
 - **Refresh Token:** JWT mit HMAC-Signatur; Ablauf nach sieben Tagen im HttpOnly-Cookie (refreshToken). Bei HTTPS mit Secure und SameSite=None, sonst SameSite=Lax.
 - Passwortspeicherung: Bcrypt-Hashing (max. 72 Bytes). Passwörter werden niemals in JSON-Antworten serialisiert.
+- Einladungen: Verwaltungsendpunkte sind ausschließlich für Tenant-Owner zugänglich. Einladungstoken werden nur bei der Erstellung im Klartext zurückgegeben und in der Datenbank ausschließlich als SHA-256-Hash gespeichert. Einladungen sind einmalig verwendbar und können vor ihrer Verwendung widerrufen werden.
 - CORS: Leitet Anfragen nur von konfigurierten CLIENT_ORIGIN-Domains durch und erlaubt Credentials.
 Diese Cookie- und CORS-Einstellungen werden für eine produktive HTTPS-Bereitstellung passend  konfiguriert.
 ---

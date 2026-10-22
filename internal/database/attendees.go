@@ -172,7 +172,7 @@ func (m *AttendeeModel) GetAttendeesByEvent(
 	for rows.Next() {
 		var user User
 
-		if err := rows.Scan(&user.Id, &user.Name, &user.Email); err != nil {
+		if err := rows.Scan(&user.Id, &user.Name); err != nil {
 			return nil, err
 		}
 		users = append(users, &user)

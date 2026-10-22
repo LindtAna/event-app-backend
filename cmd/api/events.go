@@ -206,7 +206,6 @@ func (app *application) updateEvent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid event id"})
 		return
 	}
-
 	existingEvent, err := app.models.Events.Get(
 		c.Request.Context(),
 		tenantID,

@@ -25,7 +25,16 @@ func (app *application) routes() http.Handler {
 	// Protected routes: valid access token and active tenant required
 	protected := v1.Group("/")
 	protected.Use(app.AuthMiddleware())
+
 	{
+		// Invitations (owner only)
+		ownerProtected := protected.Group("/")
+		ownerProtected.Use(app.OwnerOnlyMiddleware())
+
+		ownerProtected.POST("/invitations", app.createInvitation)
+		ownerProtected.GET("/invitations", app.getAllInvitations)
+		ownerProtected.DELETE("/invitations/:id", app.revokeInvitation)
+
 		// User profile
 		protected.PUT("/users/profile", app.updateProfile)
 
