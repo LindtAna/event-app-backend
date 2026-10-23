@@ -74,7 +74,10 @@ Benutzer können sich als Tenant-Owner (mit Firmennamen) oder als Member (per Ei
 │   └── env                      # Hilfsfunktionen für Umgebungsvariablen
 │       └── env.go
 ├── docs                  # Automatisch generierte Swagger-Dateien
-├── go.mod                # Go Module Abhängigkeiten
+│   └── testing
+│        └── api-manual-tests.md  # Anleitung für manuelle API-Tests & cURL-Beispiele
+│
+├── go.mod    # Go Module Abhängigkeiten
 ├── go.sum
 └── README.md
 ```
@@ -181,6 +184,19 @@ Jeder Tenant verfügt über Standardkategorien (Meeting, Workshop, Team-Event, P
 Beim Eintragen müssen das Event und der Zielbenutzer existieren. Bereits vorhandene Teilnahmen werden mit `409 Conflict` abgewiesen. Ein Benutzer darf sich selbst eintragen.
 
 Die Teilnehmerliste liefert Benutzerinformationen aus den Feldern `id` und `name`.
+
+
+### Manuelle API-Tests und cURL-Anleitung
+
+Das Projekt enthält eine detaillierte Dokumentation für manuelle Tests unter **`docs/testing/api-manual-tests.md`**. 
+Diese Anleitung deckt Test-Szenarien und verifizierte cURL-Befehle (für Windows `cmd`) ab, darunter:
+
+- Tenant-Isolierung und Eindeutigkeitsprüfungen (Company Name, E-Mail)
+- Event- und Kategorienverwaltung sowie Schutz vor ID-Spoofing
+- Teilnehmer-Management (Attendees) und Berechtigungsprüfungen
+- Authentifizierung, Refresh-Token, Logout und CORS-Verhalten
+- Einladungs-Workflow (Erstellung, Nutzung durch Member, Widerruf)
+- SQLite-Integritätsprüfungen (Foreign Keys und CASCADE-Löschung)
 
 ---
 
