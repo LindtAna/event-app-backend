@@ -216,3 +216,4 @@ go build ./cmd/api
 генерация криптографически стойкого JWT Secret:
 терминал Git Bash команда
 openssl rand -hex 32
+

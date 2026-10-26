@@ -49,16 +49,21 @@ const eventSelect = `
 		e.end_date_time,
 		e.category_id,
 		e.url,
-		COALESCE(u.name, '')
+		COALESCE(u.name, ''),
+		COALESCE(c.name, '')
 	FROM events e
 	LEFT JOIN users u
-		ON u.tenant_id = e.tenant_id
-		AND u.id = e.owner_id
+	ON u.tenant_id = e.tenant_id
+	AND u.id = e.owner_id
+	LEFT JOIN categories c
+	ON c.tenant_id = e.tenant_id
+	AND c.id = e.category_id
 `
 
 func scanEvent(row eventScanner) (*Event, error) {
 	var event Event
 	var ownerName string
+	var categoryName string
 
 	err := row.Scan(
 		&event.Id,
@@ -72,6 +77,7 @@ func scanEvent(row eventScanner) (*Event, error) {
 		&event.CategoryId,
 		&event.Url,
 		&ownerName,
+		&categoryName,
 	)
 	if err != nil {
 		return nil, err
@@ -82,6 +88,10 @@ func scanEvent(row eventScanner) (*Event, error) {
 			Id:   event.OwnerId,
 			Name: ownerName,
 		}
+	}
+
+	if categoryName != "" {
+		event.CategoryName = categoryName
 	}
 
 	return &event, nil

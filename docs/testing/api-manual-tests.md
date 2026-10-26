@@ -598,25 +598,7 @@ Dabei sind die erwarteten CORS-Header für http://localhost:5173 vorhanden.
 
 ## H. API zur Verwaltung von Einladungen
 
-### H1. Zugriff auf Einladungen ohne Token
-
-```cmd
-curl -i -X POST http://localhost:8080/api/v1/invitations -H "Content-Type: application/json" -d "{}"
-```
-Korrektes Ergebnis: 401 Unauthorized
-```json
-{"error":"A Bearer access token is required"}
-```
-
-### H2. Einladungsliste als Owner abrufen
-
-Nach der Anmeldung mit owner1@example.com den gültigen Access-Token in TOKEN1 speichern
-```cmd
-curl -i http://localhost:8080/api/v1/invitations -H "Authorization: Bearer %TOKEN1%"
-```
-Korrektes Ergebnis für eine leere Liste: 200 OK und [].
-
-### H3. Einladung erstellen
+### H1. Einladung erstellen
 
 ```cmd
 curl -i -X POST http://localhost:8080/api/v1/invitations -H "Authorization: Bearer %TOKEN1%" -H "Content-Type: application/json" -d "{\"expiresAt\":\"2026-10-25T12:00:00+02:00\"}"
@@ -644,16 +626,27 @@ Den invitationCode aus der Antwort speichern:
 set "INVITATION_CODE=invitationCode_FROM_RESPONSE"
 ```
 
-### H4. Erstellte Einladungen anzeigen
+### H2. Einladungsliste als Owner abrufen
 
+Nach der Anmeldung mit owner1@example.com den gültigen Access-Token in TOKEN1 speichern
 ```cmd
 curl -i http://localhost:8080/api/v1/invitations -H "Authorization: Bearer %TOKEN1%"
 ```
-Korrektes Ergebnis: 200 OK; 
-die Liste enthält die Metadaten der Einladungen.
-Der geheime Einladungscode wird in der Liste nicht erneut zurückgegeben.
+Korrektes Ergebnis für eine leere Liste: 200 OK und [].
 
-### H5. Member mit einer gültigen Einladung registrieren
+
+### H3. Zugriff auf Einladungen ohne Token
+
+```cmd
+curl -i -X POST http://localhost:8080/api/v1/invitations -H "Content-Type: application/json" -d "{}"
+```
+Korrektes Ergebnis: 401 Unauthorized
+```json
+{"error":"A Bearer access token is required"}
+```
+
+
+### H4. Member mit einer gültigen Einladung registrieren
 
 ```cmd
 curl -i -X POST http://localhost:8080/api/v1/auth/register -H "Content-Type: application/json" -d "{\"name\":\"Invitation Test Member\",\"email\":\"member.invite.test@example.com\",\"password\":\"TestPassword123!\",\"registrationType\":\"member\",\"invitationCode\":\"%INVITATION_CODE%\"}"
@@ -661,7 +654,7 @@ curl -i -X POST http://localhost:8080/api/v1/auth/register -H "Content-Type: app
 Korrektes Ergebnis: 201 Created;
 Die Antwort enthält role: "member" und tenantId: 1 (denselben Tenant wie der einladende Owner)
 
-### H6. Registrierten Member anmelden
+### H5. Registrierten Member anmelden
 
 ```cmd
 curl -i -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"member.invite.test@example.com\",\"password\":\"TestPassword123!\"}"
@@ -674,7 +667,7 @@ Für die folgenden Berechtigungstests den Token speichern:
 set "TOKEN_MEMBER=ACCESS_TOKEN_FROM_RESPONSE"
 ```
 
-### H7. Ein Member kann Einladungen nicht verwalten
+### H6. Ein Member kann Einladungen nicht verwalten
 
 ```cmd
 curl -i http://localhost:8080/api/v1/invitations -H "Authorization: Bearer %TOKEN_MEMBER%"
@@ -684,7 +677,7 @@ Korrektes Ergebnis: 403 Forbidden
 {"error":"Only the tenant owner can manage invitations"}
 ```
 
-### H8. Verwendete Einladungen werden als verwendet markiert
+### H7. Verwendete Einladungen werden als verwendet markiert
 
 Nach erfolgreicher Registrierung des Members die Liste erneut abrufen:
 ```cmd
@@ -694,7 +687,7 @@ Korrektes Ergebnis: 200 OK;
 Bei verwendeten Einladungen erscheint das Feld usedAt mit einem Zeitstempel.
 Bei nicht verwendeten Einladungen ist das Feld usedAt nicht vorhanden.
 
-### H9. Einladung widerrufen
+### H8. Einladung widerrufen
 Eine neue Einladung erstellen und ihre ID aus der Antwort notieren.
 
 ```cmd
@@ -702,7 +695,7 @@ curl -i -X DELETE http://localhost:8080/api/v1/invitations/4 -H "Authorization: 
 ```
 Korrektes Ergebnis: 204 No Content .
 
-### H10. Registrierung mit einem widerrufenen Einladungscode ablehnen
+### H9. Registrierung mit einem widerrufenen Einladungscode ablehnen
 
 Den zugehörigen invitationCode vor dem Widerruf speichern.
 Anschließend ausführen:
