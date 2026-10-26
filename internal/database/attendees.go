@@ -246,7 +246,8 @@ func (m *AttendeeModel) GetEventsByAttendee(
 			e.end_date_time,
 			e.category_id,
 			e.url,
-			COALESCE(u.name, '')
+			COALESCE(u.name, ''),
+			COALESCE(c.name, '')
 		FROM attendees a
 		JOIN events e
 			ON e.tenant_id = a.tenant_id
@@ -254,6 +255,9 @@ func (m *AttendeeModel) GetEventsByAttendee(
 		JOIN users u
 			ON u.tenant_id = e.tenant_id
 			AND u.id = e.owner_id
+		LEFT JOIN categories c
+		ON c.tenant_id = e.tenant_id
+		AND c.id = e.category_id	
 		WHERE a.tenant_id = ?
 		  AND a.user_id = ?
 		ORDER BY e.start_date_time ASC
