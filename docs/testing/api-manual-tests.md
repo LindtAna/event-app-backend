@@ -743,7 +743,7 @@ Die SQLite-Datei wurde mit Python schreibgeschützt geöffnet.
 Eine entsprechende Prüfung:
 
 ```cmd
-python -c "import sqlite3; c=sqlite3.connect('file:data.db?mode=ro', uri=True); print('Event 3:', c.execute('SELECT id FROM events WHERE id = 3').fetchall()); print('Attendees for event 3:', c.execute('SELECT id, tenant_id, eventer_id FROM attendees WHERE event_id = 3').fetchall()); print('Foreign key violations:', c.execute('PRAGMA foreign_key_check').fetchall()); c.close()"
+python -c "import sqlite3; c=sqlite3.connect('file:data.db?mode=ro', uri=True); print('Event 3:', c.execute('SELECT id FROM events WHERE id = 3').fetchall()); print('Attendees for event 3:', c.execute('SELECT id, tenant_id, user_id FROM attendees WHERE event_id = 3').fetchall()); print('Foreign key violations:', c.execute('PRAGMA foreign_key_check').fetchall()); c.close()"
 ```
 Korrektes Ergebnis:
 ```text
