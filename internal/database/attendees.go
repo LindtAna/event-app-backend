@@ -150,7 +150,7 @@ func (m *AttendeeModel) GetAttendeesByEvent(
 	defer cancel()
 
 	query := `
-		SELECT u.id, u.name
+		SELECT u.id, u.name, COALESCE(u.avatar_url, '')
 		FROM attendees a
 		JOIN users u
 			ON u.tenant_id = a.tenant_id
@@ -172,7 +172,7 @@ func (m *AttendeeModel) GetAttendeesByEvent(
 	for rows.Next() {
 		var user User
 
-		if err := rows.Scan(&user.Id, &user.Name); err != nil {
+		if err := rows.Scan(&user.Id, &user.Name, &user.AvatarUrl); err != nil {
 			return nil, err
 		}
 		users = append(users, &user)

@@ -714,7 +714,7 @@ Anschließende Anmeldeversuche mit member.revoked.test@example.com: 401 Unauthor
 ### 10. Einladung löschen
 
 ```cmd
-curl.exe -i -X DELETE http://localhost:8080/api/v1/invitations/123/permanent -H "Authorization: Bearer <ACCESS_TOKEN>"
+curl -i -X DELETE http://localhost:8080/api/v1/invitations/4 -H "Authorization: Bearer %TOKEN1%"
 ```
 Korrektes Ergebnis: 204 No Content .
 
