@@ -710,6 +710,14 @@ Korrektes Ergebnis: 400 Bad Request
 
 Anschließende Anmeldeversuche mit member.revoked.test@example.com: 401 Unauthorized / Invalid email or password, da das Konto nicht erstellt wurde.
 
+
+### 10. Einladung löschen
+
+```cmd
+curl.exe -i -X DELETE http://localhost:8080/api/v1/invitations/123/permanent -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+Korrektes Ergebnis: 204 No Content .
+
 ---
 
 ## I. SQLite: Fremdschlüssel und CASCADE beim Löschen eines Events

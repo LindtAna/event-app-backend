@@ -23,7 +23,7 @@ Benutzer können einen neuen Tenant als `owner` anlegen oder einem bestehenden T
 - **Event-Management:** CRUD-Operationen für Events innerhalb des eigenen Tenants; Abfrage nach Ersteller über `ownerId`.
 - **Kategorien:** Tenant-bezogene System- und benutzerdefinierte Kategorien. Benutzerdefinierte Kategorien werden bei Bedarf über die Event-Erstellung oder -Aktualisierung angelegt und wieder entfernt, sobald sie nicht mehr verwendet werden.
 - **Teilnehmerverwaltung:** Benutzer können sich für Events anmelden und wieder abmelden; ; Teilnehmer eines Events oder Events eines Teilnehmers abrufen.
-- Einladungsverwaltung: Tenant-Owner können Einladungen erstellen, tenantbezogen auflisten und widerrufen. Mitglieder registrieren sich mit einem gültigen Einladungscode.
+- Einladungsverwaltung:  Tenant-Owner können Einladungen erstellen, tenantbezogen auflisten, aktive Einladungen widerrufen und Einladungen dauerhaft aus der Datenbank löschen. Die dauerhafte Löschung ist unabhängig vo.m Status der Einladung möglich. Mitglieder registrieren sich mit einem gültigen Einladungscode.
 - **Zugriffskontrolle & Rollen:** Einladungverwaltung nur für `owner`; Änderungen und Löschungen von Events nur durch den jeweiligen Ersteller.
 - **API-Dokumentation:** Automatisch generierte und interaktive Swagger-UI.
 - **CORS:** Middleware zur sicheren Verarbeitung von Cross-Origin-Anfragen basierend auf erlaubten `CLIENT_ORIGIN`-Werten. 
@@ -142,11 +142,18 @@ Passwörter müssen zwischen 8 und 72 Zeichen lang sein. E-Mail-Adressen sind gl
 |---|---|---|---|
 | `POST` | `/api/v1/invitations` | Bearer Access Token, Rolle owner | Erstellt eine Einladung für den eigenen Tenant|
 | `GET` | `/api/v1/invitations` | Bearer Access Token, Rolle owner | owner	Listet Einladungen des eigenen Tenants aufn |
-| `DELETE` | `/api/v1/auth/refresh` | Bearer Access Token, Rolle owner| Widerruft eine aktive Einladung des eigenen Tenants |
+| `DELETE` | `/api/v1/invitations/:id` | Bearer Access Token, Rolle owner| Widerruft eine aktive Einladung des eigenen Tenants |
+| `DELETE` | `/api/v1/invitations/:id/permanent` | Bearer Access Token, Rolle owner| Löscht eine Einladung dauerhaft aus der Datenbank |
 
 `POST /api/v1/invitations` erwartet `expiresAt` als gültigen RFC3339-Zeitstempel in der Zukunft. Die Antwort enthält das Einladungsobjekt und `invitationCode`. Der Klartext-Code wird nur bei der Erstellung ausgegeben; in der Datenbank wird ausschließlich sein SHA-256-Hash gespeichert. Der Code muss daher bei der Erstellung an das eingeladene Mitglied weitergegeben werden.
 
-Die Einladungsrouten sind durch die Access-Token-Middleware und zusätzlich durch die Owner-Rollenprüfung geschützt. Members erhalten `403 Forbidden`. Einladungen außerhalb des authentifizierten Tenants werden nicht offengelegt.
+`DELETE /api/v1/invitations/:id` setzt revoked_at für eine aktive, noch nicht verwendete und nicht abgelaufene Einladung. Bereits verwendete, widerrufene oder abgelaufene Einladungen können über diesen Endpunkt nicht widerrufen werden.
+
+`DELETE /api/v1/invitations/:id/permanent` entfernt den Datensatz vollständig aus der Tabelle invitations. Die Löschung ist unabhängig davon möglich, ob die Einladung aktiv, verwendet, widerrufen oder abgelaufen ist. Der Vorgang ist nicht rückgängig zu machen.
+
+Beide(Widerrufen&Löschen) erfolgreichen Operationen liefern `204 No Content` ohne Response-Body. Eine ungültige ID führt zu `400 Bad Request`.
+
+Alle Endpunkte sind durch die `Access-Token-Middleware` und zusätzlich durch die Owner-Rollenprüfung geschützt. Members erhalten `403 Forbidden`. Die Tenant-Zuordnung wird aus dem authentifizierten Benutzerkontext abgeleitet. Einladungen anderer Tenants werden nicht offengelegt, wird `404 Not Found` zurückgegeben.
 
 #### Registrierungs-Modi (registrationType):
 - `owner`: Erstellt einen neuen Tenant und den Administrator. Erfordert companyName, email, password, name
@@ -299,7 +306,7 @@ Der Primärschlüssel besteht aus `(tenant_id, id)`. `UNIQUE (tenant_id, name_ke
 - Multi-Tenant Composite Foreign Keys: Um strikte Tenant-Isolierung zu garantieren, verknüpfen zusammengesetzte Fremdschlüssel (wie `EVENTS(tenant_id, owner_id) -> USERS(tenant_id, id)` und `EVENTS(tenant_id, category_id) -> CATEGORIES(tenant_id, id)`) Datensätze plattformübergreifend an denselben Tenant.
 - Cascade Deletes:
   - Das Löschen eines Tenants löscht kaskadierend alle zugehörigen Benutzer, Kategorien, Events, Teilnahmen und Einladungen (`ON DELETE CASCADE`)
-  - Das Löschen eines Users oder Events löscht abhängige Teilnahmen und Einladungen ebenfalls automatisch
+  - Das Löschen eines Users löscht über den Fremdschlüssel `invitations_creator_same_tenant_fk` auch die von diesem User erstellten Einladungen. 
 - Category Restrict: events_category_same_tenant_fk verwendet ON DELETE RESTRICT, damit Kategorien, die noch von Events verwendet werden, nicht versehentlich gelöscht werden können.
 - Für die SQLite-Integritätsprüfung kann `PRAGMA foreign_key_check` verwendet werden.
 
@@ -313,7 +320,7 @@ Das Projekt folgt einer klaren Separation of Concerns (SoC), trennt HTTP-Verarbe
 - **Middleware (`cmd/api/middleware.go`):** Prüft bei geschützten Routen den Bearer Access Token und stellt `user` sowie `userId` im Gin-Kontext bereit. Die CORS-Middleware behandelt Cross-Origin-Anfragen und OPTIONS-Preflight-Requests.
 - **Kontext-Helper (`cmd/api/context.go`):** Liest die Identität und Tenant-Zuordnung aus dem authentifizierten Gin-Kontext aus.
 - **Datenzugriff (`internal/database`):** Kapselt SQL-Abfragen für Benutzer, Events, Kategorien, Teilnahmen und Einladungen
-- Einladungen (`cmd/api/invitations.go`): Stellt Owner-only-Endpunkte zum Erstellen, Auflisten und Widerrufen von Einladungen bereit.
+- Einladungen (`cmd/api/invitations.go`): tellt Owner-only-Endpunkte zum Erstellen, Auflisten, Widerrufen und dauerhaften Löschen von Einladungen bereit.
 - **Kategorieauflösung (`internal/database/event_categories.go`):** Löst vorhandene Kategorien auf, erstellt bei Bedarf benutzerdefinierte Kategorien und bereinigt ungenutzte Kategorien in Datenbanktransaktionen.
 - **Konfiguration (`internal/env`):** Enthält Hilfsfunktionen zum Laden von Konfigurationswerten.
 
@@ -382,6 +389,8 @@ Beim Erstellen oder Aktualisieren eines Events werden Event-Änderung und Katego
 │  │  │                        │        │- POST /invitations            │   │
 │  │  │                        │        │- GET /invitations             │   │
 │  │  │                        │        │- DELETE /invitations/:id      │   │
+│  │  │                        │        │- DELETE /invitations/:id/     │   │
+│  │  │                        │        │  /permanent                   │   │
 │  │  └────────────────────────┘        └───────────────────────────────┘   │
 │  └─────────────────────────────────────────────────────────────────────┘  │
 │                               │                                           │
@@ -437,14 +446,12 @@ Die öffentlichen Routen sind nicht durch `AuthMiddleware` geschützt. Für `POS
 - **Passwortspeicherung:** Passwörter werden mit bcrypt gehasht und nicht in JSON-Antworten serialisiert. Die Registrierungsvalidierung begrenzt die Passwortlänge auf 8–72 Zeichen; bcrypt verarbeitet höchstens 72 Bytes.
 - **Tenant-Isolierung:** Geschützte Handler leiten den Tenant aus dem authentifizierten Benutzerkontext ab. Eine vom Client übermittelte `tenantId` wird nicht als Berechtigungsgrundlage verwendet.
 - **Event-Berechtigungen:** Benutzer können Events ihres Tenants abrufen; Aktualisieren und Löschen ist nur dem Ersteller des jeweiligen Events erlaubt.
-- **Einladungen:** Verwaltungsendpunkte sind ausschließlich für Tenant-Owner zugänglich. Einladungstoken werden nur bei der Erstellung im Klartext zurückgegeben und in der Datenbank ausschließlich als SHA-256-Hash gespeichert. Einladungen sind einmalig verwendbar und können vor ihrer Verwendung widerrufen werden.
+- **Einladungen:** Verwaltungsendpunkte sind ausschließlich für Tenant-Owner zugänglich. Einladungstoken werden nur bei der Erstellung im Klartext zurückgegeben und in der Datenbank ausschließlich als SHA-256-Hash gespeichert. Einladungen sind einmalig verwendbar und können vor ihrer Verwendung widerrufen werden. Zusätzlich können Tenant-Owner Einladungen unabhängig von ihrem Status dauerhaft aus der Datenbank löschen. Dabei wird die Tenant-Zugehörigkeit anhand des authentifizierten Benutzerkontexts geprüft.
 - **CORS:** Leitet Anfragen nur von konfigurierten CLIENT_ORIGIN-Domains durch und erlaubt Credentials.
 Diese Cookie- und CORS-Einstellungen werden für eine produktive HTTPS-Bereitstellung passend  konfiguriert.
 ---
 
 ## Roadmap
-
-[ ] Integration mit dem Frontend (React)
 
 [ ] Hinzufügen von Unit- und Integration-Tests
 
