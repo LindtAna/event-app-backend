@@ -325,3 +325,30 @@ func (m *InvitationModel) RegisterMember(
 
 	return nil
 }
+
+// entfernt dauerhaft eine Einladung, die zu dem angegebenen Mandanten gehört
+func (m *InvitationModel) Delete(
+	ctx context.Context,
+	tenantID int,
+	invitationID int,
+) error {
+	result, err := m.DB.ExecContext(
+		ctx,
+		`DELETE FROM invitations WHERE tenant_id = ? AND id = ?`,
+		tenantID,
+		invitationID,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return ErrInvalidInvitation
+	}
+	return nil
+}

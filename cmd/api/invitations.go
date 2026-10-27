@@ -212,3 +212,54 @@ func (app *application) revokeInvitation(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+// deleteInvitation deletes an invitation permanently from the database.
+//
+// @Summary Löscht eine Einladung dauerhaft
+// @Tags invitations
+// @Produce json
+// @Param id path int true "ID der Einladung"
+// @Success 204
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security BearerAuth
+// @Router /api/v1/invitations/{id}/permanent [delete]
+func (app *application) deleteInvitation(c *gin.Context) {
+	_, tenantID, ok := eventRequestScope(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Unauthorized",
+		})
+		return
+	}
+
+	invitationID, err := parsePositiveID(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid invitation ID",
+		})
+		return
+	}
+	err = app.models.Invitations.Delete(
+		c.Request.Context(),
+		tenantID,
+		invitationID,
+	)
+	if err != nil {
+		if errors.Is(err, database.ErrInvalidInvitation) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Invitation not found",
+			})
+			return
+		}
+		log.Printf("Invitation deletion failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete invitation",
+		})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

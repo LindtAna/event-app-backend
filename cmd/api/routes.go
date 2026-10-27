@@ -34,6 +34,7 @@ func (app *application) routes() http.Handler {
 		ownerProtected.POST("/invitations", app.createInvitation)
 		ownerProtected.GET("/invitations", app.getAllInvitations)
 		ownerProtected.DELETE("/invitations/:id", app.revokeInvitation)
+		ownerProtected.DELETE("/invitations/:id/permanent", app.deleteInvitation)
 
 		// User profile
 		protected.PUT("/users/profile", app.updateProfile)
