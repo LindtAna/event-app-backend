@@ -1,4 +1,4 @@
-# EventApp Backend API
+# SQLite-basierte Backend-Implementierung
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white)
 ![Gin](https://img.shields.io/badge/Gin-v1.10.0-008080?style=flat&logo=gin&logoColor=white)
@@ -7,12 +7,50 @@
 ![Swagger](https://img.shields.io/badge/Swagger-OpenAPI_3.0-85EA2D?style=flat&logo=swagger&logoColor=black)
 ![godotenv](https://img.shields.io/badge/godotenv-v1.5.1-222222?style=flat)
 
-## Über das Projekt
-Das EventApp Backend ist eine RESTful API, die mit Go (Golang) und dem Gin-Framework entwickelt wurde.
-Sie dient als Grundlage für eine Event-Management-Plattform mit Mandantenfähigkeit (Multi-Tenancy).
-Benutzer, Events, Kategorien und Teilnahmen sind jeweils einem Tenant (Unternehmen/Organisation) zugeordnet; geschützte Routen und Datenbankabfragen arbeiten streng tenantbezogen.
+## Inhaltsverzeichnis
 
-Benutzer können einen neuen Tenant als `owner` anlegen oder einem bestehenden Tenant als `member` über einen Einladungscode beitreten. Authentifizierte Benutzer können Events erstellen und abrufen. Ein Event darf nur von seinem Ersteller geändert oder gelöscht werden. Die Verwaltung von Einladungen ist auf Tenant-Owner beschränkt.
+- [Über das Projekt](#uber-das-projekt)
+- [Features](#features)
+- [Technologie-Stack](#technologie-stack)
+- [Repository-Struktur](#repository-struktur)
+- [Umgebungsvariablen & Lokaler Start](#umgebungsvariablen--lokaler-start)
+- [Ausführen der Migrationen](#ausfuhren-der-migrationen)
+- [API-Dokumentation](#api-dokumentation)
+  - [API-Endpunkte](#api-endpunkte)
+  - [Manuelle API-Tests und cURL-Anleitung](#manuelle-api-tests-und-curl-anleitung)
+- [Datenbank-Schema](#datenbank-schema)
+  - [Beziehungen und Löschverhalten](#beziehungen-und-loschverhalten)
+- [Architektur](#architektur)
+  - [Ablauf: Authentifizierung](#ablauf-authentifizierung)
+  - [Ablauf: Event und Kategorie](#ablauf-event-und-kategorie)
+  - [Ablauf: Einladungen](#ablauf-einladungen)
+  - [System-Architektur](#system-architektur)
+- [Sicherheit und Authentifizierung](#sicherheit-und-authentifizierung)
+- [Roadmap](#roadmap)
+
+## Über das Projekt
+Dieses Repository enthält die SQLite-basierte Backend-Implementierung der EventApp, entwickelt mit Go (Golang) und dem Gin-Framework.
+
+Sie bildet die Grundlage für eine mandantenfähige Event-Management-Plattform (Multi-Tenancy). Benutzer, Events, Kategorien und Event-Teilnahmen sind jeweils einem Tenant (Unternehmen oder Organisation) zugeordnet. Geschützte API-Endpunkte und Datenbankabfragen berücksichtigen konsequent den jeweiligen Tenant.
+
+Benutzer können einen neuen Tenant als `owner` erstellen oder einem bestehenden Tenant als `member` über einen Einladungscode beitreten. Authentifizierte Benutzer können Events erstellen und abrufen. Änderungen und Löschungen sind auf den jeweiligen Ersteller eines Events beschränkt. Die Einladungsverwaltung ist ausschließlich Tenant-Ownern vorbehalten.
+
+### Architekturentscheidung 
+Diese Implementierung stellt eine eigenständig ausführbare Backend-Anwendung mit mandantenbezogener Datenisolierung und relationaler Datenhaltung bereit.
+
+Sie ist als eigenständiges Backend-Projekt mit geringen Infrastrukturabhängigkeiten konzipiert. Die Wahl von SQLite ermöglicht den Betrieb ohne separaten Datenbankserver.
+
+### Zugehöriges Frontend und lokaler Betrieb
+Für dieses Backend steht ein kompatibles Frontend auf Basis von React und TypeScript zur Verfügung:
+[EventApp Frontend auf GitHub](https://github.com/LindtAna/event-app-frontend)
+
+Beide Komponenten sind aufeinander abgestimmt und können gemeinsam lokal betrieben werden, sodass eine vollständige Event-Management-Anwendung entsteht.
+Das Frontend kommuniziert über eine REST-API mit dem Backend. Bei entsprechender Konfiguration der API-Basis-URL und der erforderlichen CORS-Einstellungen können beide Komponenten unabhängig voneinander gestartet werden.
+
+### Technischer Schwerpunkt und Einschränkungen:
+SQLite ermöglicht den lokalen Betrieb ohne separaten Datenbankserver. Beim Deployment muss jedoch berücksichtigt werden, dass die Datenbank in einer lokalen Datei gespeichert wird und für den dauerhaften Betrieb ein geeignetes persistentes Speichermedium benötigt.
+
+SQLite eignet sich insbesondere für lokale Entwicklungsumgebungen, eigenständige Anwendungen und Szenarien mit überschaubaren Anforderungen an konkurrierende Schreibzugriffe. Aufgrund der Architektur als eingebettete Datenbank und der begrenzten Schreibkonkurrenz ist SQLite nicht für jedes Betriebs- und Skalierungsszenario gleichermaßen geeignet.
 
 ---
 
